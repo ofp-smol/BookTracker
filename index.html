@@ -173,6 +173,10 @@ background: #1a1a1a; color: white; font-weight: bold; font-size: 16px;
 background: #1a1a1a; padding: 10px; border-radius: 8px; margin: 10px 0;
 font-size: 12px; color: #ccc; text-align: center;
 }
+.offline-indicator {
+background: #666; color: white; padding: 10px; text-align: center;
+font-size: 12px; display: none;
+}
 @media (max-width: 480px) {
 .book-info { flex-direction: column; align-items: center; text-align: center; }
 .book-actions { justify-content: center; }
@@ -185,6 +189,9 @@ font-size: 12px; color: #ccc; text-align: center;
 <div class="header">
 <h1>📚 BookTracker</h1>
 <p>Scan, track, and review your reading journey</p>
+</div>
+<div class="offline-indicator" id="offline-indicator">
+📵 You're offline. Some features may not work.
 </div>
 <div class="nav-tabs">
 <button class="nav-tab active" data-tab="scan">📱 Scan</button>
@@ -235,18 +242,91 @@ font-size: 12px; color: #ccc; text-align: center;
 <button id="install-btn">Install</button>
 <button id="dismiss-install" style="background: transparent; color: white;">✕</button>
 </div>
+
 <script>
-// Global variables
+// Global variables with proper initialization
+let quaggaDetectionHandler = null;
 let currentStream = null;
 let scanningActive = false;
+let quaggaInitialized = false;
+let isProcessingBarcode = false;
 let books = [];
 let deferredPrompt;
 let lastScannedBarcode = null;
 let lastScanTime = 0;
+let eventListenerCleanup = [];
+
+// Enhanced localStorage safety wrapper
+const StorageManager = {
+isAvailable() {
+try {
+const test = '__storage_test__';
+localStorage.setItem(test, test);
+localStorage.removeItem(test);
+return true;
+} catch (e) {
+return false;
+}
+},
+get(key, defaultValue = null) {
+if (!this.isAvailable()) {
+debugLog('localStorage not available, using memory fallback');
+return defaultValue;
+}
+try {
+const item = localStorage.getItem(key);
+return item ? JSON.parse(item) : defaultValue;
+} catch (error) {
+debugLog(`localStorage get error for key ${key}: ${error.message}`);
+return defaultValue;
+}
+},
+set(key, value) {
+if (!this.isAvailable()) {
+debugLog('localStorage not available, changes will not persist');
+return false;
+}
+try {
+localStorage.setItem(key, JSON.stringify(value));
+return true;
+} catch (error) {
+if (error.name === 'QuotaExceededError') {
+debugLog('localStorage quota exceeded');
+showError('Storage full. Please remove some books to continue.');
+} else {
+debugLog(`localStorage set error for key ${key}: ${error.message}`);
+}
+return false;
+}
+}
+};
+
+// Debounce utility for input handlers
+function debounce(func, wait) {
+let timeout;
+return function executedFunction(...args) {
+const later = () => {
+clearTimeout(timeout);
+func(...args);
+};
+clearTimeout(timeout);
+timeout = setTimeout(later, wait);
+};
+}
 
 // Debug logging
 function debugLog(message) {
 console.log('BookTracker:', message);
+}
+
+// Network status monitoring
+function updateOfflineStatus() {
+const indicator = document.getElementById('offline-indicator');
+if (!navigator.onLine) {
+indicator.style.display = 'block';
+} else {
+indicator.style.display = 'none';
+}
 }
 
 // Check camera support
@@ -262,22 +342,28 @@ return false;
 return true;
 }
 
-// Safe storage functions
+// Enhanced storage functions
 function getStoredBooks() {
-try {
-return JSON.parse(localStorage.getItem('books') || '[]');
-} catch (e) {
-debugLog('localStorage not available');
-return [];
-}
+return StorageManager.get('books', []);
 }
 
 function saveBooks() {
-try {
-localStorage.setItem('books', JSON.stringify(books));
-} catch (e) {
-debugLog('localStorage save failed');
+const success = StorageManager.set('books', books);
+if (!success) {
+showError('Could not save books. Changes may be lost.');
 }
+return success;
+}
+
+// Input validation
+function validateISBN(isbn) {
+const cleaned = isbn.replace(/\D/g, '');
+return cleaned.length >= 8 && cleaned.length <= 14;
+}
+
+function sanitizeInput(input) {
+return input.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+.replace(/[<>]/g, '');
 }
 
 // PWA Install Logic
@@ -287,12 +373,16 @@ deferredPrompt = e;
 document.getElementById('install-banner').style.display = 'flex';
 });
 
-// Register Service Worker
+// Register Service Worker with error handling
 if ('serviceWorker' in navigator) {
 window.addEventListener('load', () => {
 navigator.serviceWorker.register('./sw.js')
 .then(registration => {
-debugLog('SW registered');
+debugLog('SW registered successfully');
+// Listen for updates
+registration.addEventListener('updatefound', () => {
+debugLog('New service worker version available');
+});
 })
 .catch(registrationError => {
 debugLog('SW registration failed: ' + registrationError);
@@ -300,10 +390,45 @@ debugLog('SW registration failed: ' + registrationError);
 });
 }
 
-// Initialize Quagga barcode scanner
+// Enhanced Quagga initialization with proper cleanup
 function startQuagga() {
-debugLog('Starting Quagga barcode scanner...');
+// Clean up any existing handler first
+if (quaggaDetectionHandler) {
+Quagga.off('detected', quaggaDetectionHandler);
+quaggaDetectionHandler = null;
+}
 
+// Prevent multiple initializations
+if (quaggaInitialized) {
+debugLog('Quagga already initialized, starting existing instance');
+try {
+Quagga.start();
+scanningActive = true;
+// Re-register the handler on the running instance
+quaggaDetectionHandler = async (data) => {
+if (!scanningActive || isProcessingBarcode) return;
+const code = data.codeResult.code;
+debugLog('Barcode detected: ' + code);
+try {
+Quagga.stop();
+scanningActive = false;
+showScanSuccess();
+await handleBarcodeDetected(code);
+} catch (error) {
+debugLog('Error handling barcode: ' + error.message);
+isProcessingBarcode = false;
+}
+};
+Quagga.on('detected', quaggaDetectionHandler);
+} catch (error) {
+debugLog('Error restarting Quagga: ' + error.message);
+quaggaInitialized = false;
+startQuagga(); // fallback to full init
+}
+return;
+}
+
+debugLog('Starting Quagga barcode scanner...');
 const cameraContainer = document.querySelector('#camera-container');
 if (!cameraContainer) {
 showError('Camera container not found');
@@ -315,13 +440,13 @@ inputStream: {
 name: "Live",
 type: "LiveStream",
 target: cameraContainer,
-constraints: { 
+constraints: {
 facingMode: "environment",
 width: { ideal: 1280, max: 1920 },
 height: { ideal: 720, max: 1080 }
 }
 },
-decoder: { 
+decoder: {
 readers: ["ean_reader", "ean_8_reader", "code_128_reader", "code_39_reader"]
 },
 locate: true,
@@ -332,32 +457,93 @@ halfSample: true
 }, err => {
 if (err) {
 console.error('Quagga init error', err);
-showError('Barcode scanner initialization failed: ' + err.message);
+showError('Barcode scanner init failed: ' + err.message);
+quaggaInitialized = false;
 return;
 }
+quaggaInitialized = true;
 debugLog('Quagga initialized successfully');
-Quagga.start();
-scanningActive = true;
-});
 
-// Handle successful barcode detection
-Quagga.onDetected(data => {
-if (!scanningActive) return;
-
+// Create and register the detection handler
+quaggaDetectionHandler = async (data) => {
+if (!scanningActive || isProcessingBarcode) return;
 const code = data.codeResult.code;
 debugLog('Barcode detected: ' + code);
-
-// Stop scanning to prevent multiple detections
+try {
 Quagga.stop();
 scanningActive = false;
 showScanSuccess();
-handleBarcodeDetected(code);
+await handleBarcodeDetected(code);
+} catch (error) {
+debugLog('Error handling barcode: ' + error.message);
+isProcessingBarcode = false;
+}
+};
+Quagga.on('detected', quaggaDetectionHandler);
+
+// Start scanning
+try {
+Quagga.start();
+scanningActive = true;
+} catch (startError) {
+debugLog('Error starting Quagga: ' + startError.message);
+quaggaInitialized = false;
+}
 });
 }
 
-// Initialize app
+// Enhanced scanning cleanup
+function stopScanning() {
+debugLog('Stopping camera...');
+scanningActive = false;
+isProcessingBarcode = false;
+
+// Proper Quagga cleanup with stored handler
+if (quaggaInitialized) {
+try {
+Quagga.stop();
+if (quaggaDetectionHandler) {
+Quagga.off('detected', quaggaDetectionHandler);
+quaggaDetectionHandler = null;
+debugLog('Quagga detection handler removed');
+}
+debugLog('Quagga stopped successfully');
+} catch (error) {
+debugLog('Error stopping Quagga: ' + error.message);
+}
+}
+quaggaInitialized = false;
+
+// Stop camera stream
+if (currentStream) {
+try {
+currentStream.getTracks().forEach(track => {
+track.stop();
+debugLog('Camera track stopped: ' + track.kind);
+});
+currentStream = null;
+} catch (error) {
+debugLog('Error stopping camera tracks: ' + error.message);
+currentStream = null;
+}
+}
+
+// UI cleanup
+document.getElementById('camera-info').style.display = 'none';
+document.getElementById('camera-container').style.display = 'none';
+document.getElementById('stop-btn').style.display = 'none';
+document.getElementById('scan-button').style.display = 'block';
+document.getElementById('scan-result').style.display = 'none';
+}
+
+// Initialize app with enhanced error handling
 document.addEventListener('DOMContentLoaded', function() {
 debugLog('App initializing...');
+
+// Setup offline monitoring
+window.addEventListener('online', updateOfflineStatus);
+window.addEventListener('offline', updateOfflineStatus);
+updateOfflineStatus();
 
 if (!checkCameraSupport()) {
 return;
@@ -366,14 +552,19 @@ return;
 books = getStoredBooks();
 renderLibrary();
 
-// Navigation
+// Navigation with cleanup
 document.addEventListener('click', function(e) {
 if (e.target.classList.contains('nav-tab')) {
-switchTab(e.target.getAttribute('data-tab'));
+const newTab = e.target.getAttribute('data-tab');
+// Clean up when switching away from scan tab
+if (newTab !== 'scan' && scanningActive) {
+stopScanning();
+}
+switchTab(newTab);
 }
 });
 
-// Button event listeners
+// Enhanced button event listeners
 const scanButton = document.getElementById('scan-button');
 const stopButton = document.getElementById('stop-btn');
 const manualLookupBtn = document.getElementById('manual-lookup-btn');
@@ -398,8 +589,12 @@ handleManualLookup();
 }
 });
 
+// Enhanced input validation
 manualIsbnInput.addEventListener('input', function(e) {
 let value = e.target.value.replace(/[^\d\-X]/gi, '');
+if (value.length > 13) {
+value = value.substring(0, 13);
+}
 e.target.value = value;
 });
 }
@@ -422,12 +617,17 @@ document.getElementById('install-banner').style.display = 'none';
 debugLog('App initialized successfully');
 });
 
-// Button handlers
+// Enhanced button handlers
 function handleScanButtonClick(e) {
 e.preventDefault();
 debugLog('Scan button clicked');
 
 if (!checkCameraSupport()) {
+return;
+}
+
+if (!navigator.onLine) {
+showError('Internet connection required for book lookup');
 return;
 }
 
@@ -445,9 +645,10 @@ debugLog('Stop button clicked');
 stopScanning();
 }
 
+// Enhanced manual lookup with validation
 async function handleManualLookup() {
 const isbnInput = document.getElementById('manual-isbn');
-const rawIsbn = isbnInput.value.trim();
+const rawIsbn = sanitizeInput(isbnInput.value.trim());
 
 if (!rawIsbn) {
 showError('Please enter an ISBN number');
@@ -456,8 +657,13 @@ return;
 
 const isbn = rawIsbn.replace(/\D/g, '');
 
-if (isbn.length < 8 || isbn.length > 14) {
+if (!validateISBN(isbn)) {
 showError('Please enter a valid ISBN (8-14 digits)');
+return;
+}
+
+if (!navigator.onLine) {
+showError('Internet connection required for book lookup');
 return;
 }
 
@@ -482,16 +688,24 @@ document.getElementById('scan-result').style.display = 'none';
 }
 
 function switchTab(tabName) {
+// Clean up event listeners when switching tabs
+if (tabName !== 'library') {
+cleanupEventListeners();
+}
+
 document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
 document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
 document.querySelectorAll('.tab-content').forEach(content =>
 content.classList.remove('active'));
 document.getElementById(tabName + '-tab').classList.add('active');
+
 if (tabName === 'library') renderLibrary();
 }
 
+// Enhanced camera startup with better error handling
 async function startScanning() {
 debugLog('Starting camera access...');
+
 try {
 document.getElementById('camera-info').innerHTML = '<p>🔄 Requesting camera access...</p>';
 
@@ -523,6 +737,11 @@ clearTimeout(timeout);
 debugLog('Video can play');
 resolve();
 }, { once: true });
+
+video.addEventListener('error', (e) => {
+clearTimeout(timeout);
+reject(new Error('Video load error: ' + e.message));
+}, { once: true });
 });
 
 document.getElementById('camera-info').style.display = 'none';
@@ -539,49 +758,24 @@ startQuagga();
 debugLog('Camera error occurred: ' + error.name + ' - ' + error.message);
 document.getElementById('camera-info').style.display = 'none';
 
-if (error.name === 'NotAllowedError') {
-showError('❌ Camera permission denied. Please allow camera access and try again.');
-} else if (error.name === 'NotFoundError') {
-showError('❌ No camera found on this device.');
-} else if (error.name === 'NotSupportedError') {
-showError('❌ Camera not supported on this device.');
-} else if (error.name === 'NotReadableError') {
-showError('❌ Camera is being used by another application.');
-} else if (error.name === 'OverconstrainedError') {
-showError('❌ Camera constraints could not be satisfied.');
-} else if (error.name === 'SecurityError') {
-showError('❌ Camera access blocked by security policy. Please use HTTPS.');
-} else {
-showError('❌ Camera error: ' + error.message + '. Try refreshing the page.');
-}
+// Enhanced error messages
+const errorMessages = {
+NotAllowedError: '❌ Camera permission denied. Please allow camera access and try again.',
+NotFoundError: '❌ No camera found on this device.',
+NotSupportedError: '❌ Camera not supported on this device.',
+NotReadableError: '❌ Camera is being used by another application.',
+OverconstrainedError: '❌ Camera constraints could not be satisfied.',
+SecurityError: '❌ Camera access blocked by security policy. Please use HTTPS.',
+AbortError: '❌ Camera access was aborted.',
+TypeError: '❌ Network error occurred while accessing camera.'
+};
+
+const message = errorMessages[error.name] || `❌ Camera error: ${error.message}. Try refreshing the page.`;
+showError(message);
 }
 }
 
-function stopScanning() {
-debugLog('Stopping camera...');
-scanningActive = false;
-
-// Stop Quagga
-if (typeof Quagga !== 'undefined') {
-Quagga.stop();
-debugLog('Quagga stopped');
-}
-
-if (currentStream) {
-currentStream.getTracks().forEach(track => {
-track.stop();
-debugLog('Camera track stopped');
-});
-currentStream = null;
-}
-
-document.getElementById('camera-info').style.display = 'none';
-document.getElementById('camera-container').style.display = 'none';
-document.getElementById('stop-btn').style.display = 'none';
-document.getElementById('scan-button').style.display = 'block';
-document.getElementById('scan-result').style.display = 'none';
-}
-
+// Enhanced scan success feedback
 function showScanSuccess() {
 const overlay = document.querySelector('.scan-overlay');
 const status = document.querySelector('.scan-status');
@@ -609,22 +803,26 @@ status.style.background = 'rgba(0, 0, 0, 0.8)';
 }
 }, 2000);
 
-// Haptic feedback
+// Enhanced feedback
 if (navigator.vibrate) {
 navigator.vibrate([200, 100, 200]);
 }
 
-// Audio feedback
+// Enhanced audio feedback with error handling
 try {
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const oscillator = audioContext.createOscillator();
 const gainNode = audioContext.createGain();
+
 oscillator.connect(gainNode);
 gainNode.connect(audioContext.destination);
+
 oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
 oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+
 gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
 gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+
 oscillator.start(audioContext.currentTime);
 oscillator.stop(audioContext.currentTime + 0.2);
 } catch (error) {
@@ -632,11 +830,22 @@ debugLog('Audio feedback failed: ' + error.message);
 }
 }
 
+// Enhanced barcode handling with race condition prevention
 async function handleBarcodeDetected(barcode) {
+// Prevent race conditions
+if (isProcessingBarcode) {
+debugLog('Already processing a barcode, ignoring duplicate');
+return;
+}
+
+isProcessingBarcode = true;
+
+try {
 const cleanedISBN = barcode.replace(/\D/g, '');
 
-if (lastScannedBarcode === barcode && Date.now() - lastScanTime < 2000) {
-debugLog('Duplicate barcode detected within 2 seconds, ignoring');
+// Enhanced duplicate detection
+if (lastScannedBarcode === barcode && Date.now() - lastScanTime < 3000) {
+debugLog('Duplicate barcode detected within 3 seconds, ignoring');
 return;
 }
 
@@ -645,6 +854,12 @@ lastScanTime = Date.now();
 
 debugLog('Processing barcode: ' + barcode);
 console.log('✅ PROCESSING ISBN:', cleanedISBN);
+
+// Validate ISBN before processing
+if (!validateISBN(cleanedISBN)) {
+showError('Invalid barcode format. Please try scanning again or enter ISBN manually.');
+return;
+}
 
 document.getElementById('scan-result').style.display = 'block';
 document.getElementById('scan-result').innerHTML = `
@@ -659,17 +874,20 @@ document.getElementById('scan-result').innerHTML = `
 </div>
 `;
 
-try {
 await lookupBookByISBN(cleanedISBN, 'scanned', barcode);
+
 } catch (error) {
 debugLog('Book lookup error: ' + error.message);
 showError('Error looking up book. Check internet connection.');
 setTimeout(() => {
 document.getElementById('scan-result').style.display = 'none';
 }, 3000);
+} finally {
+isProcessingBarcode = false;
 }
 }
 
+// Enhanced book lookup with timeout and retry logic
 async function lookupBookByISBN(isbn, source, originalBarcode = null) {
 debugLog(`Looking up ISBN: ${isbn}`);
 console.log('🔍 API LOOKUP - ISBN:', isbn, 'Source:', source, 'Original:', originalBarcode);
@@ -681,7 +899,7 @@ const sources = [
 ];
 
 for (const sourceInfo of sources) {
-if (!bookData) {
+if (!bookData && navigator.onLine) {
 debugLog(`Trying ${sourceInfo.name}...`);
 try {
 bookData = await sourceInfo.func(isbn);
@@ -692,6 +910,10 @@ break;
 }
 } catch (error) {
 debugLog(`❌ ${sourceInfo.name} failed: ${error.message}`);
+// Show specific error for network issues
+if (error.message.includes('timeout') || error.message.includes('Network')) {
+showError(`${sourceInfo.name} is slow to respond. Trying alternate source...`);
+}
 }
 }
 }
@@ -706,7 +928,9 @@ foundIn: bookData.source
 };
 displayBookPreview(bookData);
 } else {
-const errorMsg = source === 'manual'
+const errorMsg = !navigator.onLine
+? 'No internet connection. Please check your network and try again.'
+: source === 'manual'
 ? `No book found for ISBN: ${isbn}. This might be a region-specific edition or the ISBN might not be in our databases.`
 : 'Book not found in any database. Try manual entry or a different barcode.';
 
@@ -722,11 +946,28 @@ document.getElementById('scan-result').style.display = 'none';
 }
 }
 
+// Enhanced Google Books API with timeout and error handling
 async function fetchBookFromGoogle(isbn) {
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
 try {
 const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`;
 console.log('📡 Google Books API call:', url);
-const response = await fetch(url);
+
+const response = await fetch(url, {
+signal: controller.signal,
+headers: {
+'Accept': 'application/json',
+}
+});
+
+clearTimeout(timeoutId);
+
+if (!response.ok) {
+throw new Error(`Google Books API error: ${response.status} ${response.statusText}`);
+}
+
 const data = await response.json();
 console.log('📡 Google Books Response:', data);
 
@@ -734,26 +975,53 @@ if (data.items && data.items.length > 0) {
 const book = data.items[0].volumeInfo;
 const result = {
 isbn: isbn,
-title: book.title || 'Unknown Title',
-authors: book.authors || ['Unknown Author'],
+title: sanitizeInput(book.title || 'Unknown Title'),
+authors: book.authors ? book.authors.map(a => sanitizeInput(a)) : ['Unknown Author'],
 pageCount: book.pageCount || 0,
 coverUrl: book.imageLinks?.thumbnail?.replace('http:', 'https:') || '',
-publishedDate: book.publishedDate || 'Unknown'
+publishedDate: sanitizeInput(book.publishedDate || 'Unknown')
 };
+
 console.log('📚 Google Books Result:', result);
 return result;
 }
-} catch (error) {
-debugLog('Google Books API error: ' + error.message);
-}
+
 return null;
+
+} catch (error) {
+clearTimeout(timeoutId);
+if (error.name === 'AbortError') {
+throw new Error('Request timeout - please check your internet connection');
+} else if (error.name === 'TypeError') {
+throw new Error('Network error - please check your internet connection');
+} else {
+throw new Error(`Google Books lookup failed: ${error.message}`);
+}
+}
 }
 
+// Enhanced OpenLibrary API with timeout and error handling
 async function fetchBookFromOpenLibrary(isbn) {
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout (OpenLibrary is slower)
+
 try {
 const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`;
 console.log('📡 OpenLibrary API call:', url);
-const response = await fetch(url);
+
+const response = await fetch(url, {
+signal: controller.signal,
+headers: {
+'Accept': 'application/json',
+}
+});
+
+clearTimeout(timeoutId);
+
+if (!response.ok) {
+throw new Error(`OpenLibrary API error: ${response.status} ${response.statusText}`);
+}
+
 const data = await response.json();
 console.log('📡 OpenLibrary Response:', data);
 
@@ -762,21 +1030,32 @@ if (data[bookKey]) {
 const book = data[bookKey];
 const result = {
 isbn: isbn,
-title: book.title || 'Unknown Title',
-authors: book.authors?.map(a => a.name) || ['Unknown Author'],
+title: sanitizeInput(book.title || 'Unknown Title'),
+authors: book.authors ? book.authors.map(a => sanitizeInput(a.name)) : ['Unknown Author'],
 pageCount: book.number_of_pages || 0,
 coverUrl: book.cover?.medium || '',
-publishedDate: book.publish_date || 'Unknown'
+publishedDate: sanitizeInput(book.publish_date || 'Unknown')
 };
+
 console.log('📚 OpenLibrary Result:', result);
 return result;
 }
-} catch (error) {
-debugLog('Open Library API error: ' + error.message);
-}
+
 return null;
+
+} catch (error) {
+clearTimeout(timeoutId);
+if (error.name === 'AbortError') {
+throw new Error('Request timeout - OpenLibrary is slow, please try again');
+} else if (error.name === 'TypeError') {
+throw new Error('Network error - please check your internet connection');
+} else {
+throw new Error(`OpenLibrary lookup failed: ${error.message}`);
+}
+}
 }
 
+// Enhanced book preview display
 function displayBookPreview(bookData) {
 const scanInfoHtml = bookData.scanInfo ? `
 <div class="scanned-info">
@@ -790,11 +1069,16 @@ ${bookData.scanInfo.foundIn ?
 </div>
 ` : '';
 
+// Enhanced cover image with lazy loading and error handling
+const coverImg = bookData.coverUrl ?
+`<img src="${bookData.coverUrl}" alt="${bookData.title}" class="book-cover" loading="lazy" onerror="this.style.display='none'">` :
+`<div class="book-cover" style="display:flex;align-items:center;justify-content:center;color:#666;">📖</div>`;
+
 document.getElementById('scan-result').innerHTML = `
 <div class="book-card">
 ${scanInfoHtml}
 <div class="book-info">
-<img src="${bookData.coverUrl || ''}" alt="${bookData.title}" class="book-cover">
+${coverImg}
 <div class="book-details">
 <h3>${bookData.title}</h3>
 <p><strong>Author:</strong> ${bookData.authors.join(', ')}</p>
@@ -810,9 +1094,14 @@ ${scanInfoHtml}
 </div>
 `;
 
-document.getElementById('add-book-btn').addEventListener('click', () => addBookToLibrary(bookData));
-document.getElementById('continue-scan-btn').addEventListener('click', continueScanningAfterPreview);
-document.getElementById('wrong-book-btn').addEventListener('click', handleWrongBook);
+// Add event listeners with error handling
+const addBtn = document.getElementById('add-book-btn');
+const continueBtn = document.getElementById('continue-scan-btn');
+const wrongBtn = document.getElementById('wrong-book-btn');
+
+if (addBtn) addBtn.addEventListener('click', () => addBookToLibrary(bookData));
+if (continueBtn) continueBtn.addEventListener('click', continueScanningAfterPreview);
+if (wrongBtn) wrongBtn.addEventListener('click', handleWrongBook);
 }
 
 function handleWrongBook() {
@@ -824,6 +1113,7 @@ manualInput.value = '';
 showError('Book lookup cancelled. Try scanning a different barcode or check the ISBN manually.');
 }
 
+// Enhanced add book with duplicate checking
 function addBookToLibrary(bookData) {
 if (books.find(book => book.isbn === bookData.isbn)) {
 showError('This book is already in your library!');
@@ -843,16 +1133,17 @@ dateAdded: new Date().toISOString()
 delete newBook.scanInfo;
 
 books.push(newBook);
-saveBooks();
-stopScanning();
+const saved = saveBooks();
 
+if (saved) {
+stopScanning();
 const manualInput = document.getElementById('manual-isbn');
 if (manualInput) {
 manualInput.value = '';
 }
-
 switchTab('library');
 showSuccess('Book added to your library!');
+}
 }
 
 function continueScanningAfterPreview() {
@@ -861,14 +1152,35 @@ const manualInput = document.getElementById('manual-isbn');
 if (manualInput) {
 manualInput.value = '';
 }
-// Restart Quagga scanning
+
+// Reset processing flag and restart scanning
+isProcessingBarcode = false;
+
 setTimeout(() => {
+if (!scanningActive && quaggaInitialized) {
 startQuagga();
+}
 }, 500);
 }
 
+// Enhanced event listener cleanup
+function cleanupEventListeners() {
+eventListenerCleanup.forEach(cleanup => {
+try {
+cleanup();
+} catch (error) {
+debugLog('Error during event listener cleanup: ' + error.message);
+}
+});
+eventListenerCleanup.length = 0;
+}
+
+// Enhanced library rendering with proper event management
 function renderLibrary() {
 const libraryContent = document.getElementById('library-content');
+
+// Clean up previous event listeners
+cleanupEventListeners();
 
 if (books.length === 0) {
 libraryContent.innerHTML = `
@@ -882,11 +1194,14 @@ return;
 
 const booksHtml = books.map(book => {
 const progress = book.pageCount > 0 ? (book.currentPage / book.pageCount) * 100 : 0;
+const coverImg = book.coverUrl ?
+`<img src="${book.coverUrl}" alt="${book.title}" class="book-cover" loading="lazy" onerror="this.style.display='none'">` :
+`<div class="book-cover" style="display:flex;align-items:center;justify-content:center;color:#666;">📖</div>`;
 
 return `
 <div class="book-card" data-book-id="${book.id}">
 <div class="book-info">
-<img src="${book.coverUrl || ''}" alt="${book.title}" class="book-cover">
+${coverImg}
 <div class="book-details">
 <h3>${book.title}</h3>
 <p><strong>Author:</strong> ${book.authors.join(', ')}</p>
@@ -920,46 +1235,82 @@ ${book.pageCount > 0 ? `<span>/ ${book.pageCount}</span>` : ''}
 
 libraryContent.innerHTML = booksHtml;
 
-// Add event listeners
+// Add event listeners with proper cleanup tracking
 document.querySelectorAll('.book-card').forEach(card => {
 const bookId = parseInt(card.getAttribute('data-book-id'));
 
-card.querySelector('.page-input-field').addEventListener('change', (e) =>
-updateBookPage(bookId, e.target.value));
+// Create debounced handlers
+const debouncedPageUpdate = debounce((value) => updateBookPage(bookId, value), 500);
+const debouncedNotesUpdate = debounce((value) => updateBookNotes(bookId, value), 1000);
 
-card.querySelector('.notes-area').addEventListener('change', (e) =>
-updateBookNotes(bookId, e.target.value));
+// Page input handler
+const pageHandler = (e) => debouncedPageUpdate(e.target.value);
+const pageInput = card.querySelector('.page-input-field');
+if (pageInput) {
+pageInput.addEventListener('input', pageHandler);
+eventListenerCleanup.push(() => pageInput.removeEventListener('input', pageHandler));
+}
 
+// Notes handler
+const notesHandler = (e) => debouncedNotesUpdate(e.target.value);
+const notesArea = card.querySelector('.notes-area');
+if (notesArea) {
+notesArea.addEventListener('input', notesHandler);
+eventListenerCleanup.push(() => notesArea.removeEventListener('input', notesHandler));
+}
+
+// Status buttons
 card.querySelectorAll('.status-btn').forEach(btn => {
-btn.addEventListener('click', (e) => updateBookStatus(bookId,
-e.target.getAttribute('data-status')));
+const statusHandler = (e) => updateBookStatus(bookId, e.target.getAttribute('data-status'));
+btn.addEventListener('click', statusHandler);
+eventListenerCleanup.push(() => btn.removeEventListener('click', statusHandler));
 });
 
+// Recommendation buttons
 card.querySelectorAll('.rec-btn').forEach(btn => {
-btn.addEventListener('click', (e) => updateBookRecommendation(bookId,
-e.target.getAttribute('data-recommendation')));
+const recHandler = (e) => updateBookRecommendation(bookId, e.target.getAttribute('data-recommendation'));
+btn.addEventListener('click', recHandler);
+eventListenerCleanup.push(() => btn.removeEventListener('click', recHandler));
 });
 
-card.querySelector('.remove-btn').addEventListener('click', () => removeBook(bookId));
+// Remove button
+const removeBtn = card.querySelector('.remove-btn');
+if (removeBtn) {
+const removeHandler = () => removeBook(bookId);
+removeBtn.addEventListener('click', removeHandler);
+eventListenerCleanup.push(() => removeBtn.removeEventListener('click', removeHandler));
+}
 });
 }
 
+// Enhanced book update functions with validation
 function updateBookPage(bookId, newPage) {
 const book = books.find(b => b.id === bookId);
 if (book) {
-book.currentPage = parseInt(newPage) || 0;
+const pageNum = Math.max(0, parseInt(newPage) || 0);
+
+// Validate page number
+if (book.pageCount > 0 && pageNum > book.pageCount) {
+book.currentPage = book.pageCount;
+} else {
+book.currentPage = pageNum;
+}
+
+// Auto-update status when finished
 if (book.pageCount > 0 && book.currentPage >= book.pageCount) {
 book.status = 'finished';
 }
-saveBooks();
+
+if (saveBooks()) {
 renderLibrary();
+}
 }
 }
 
 function updateBookNotes(bookId, notes) {
 const book = books.find(b => b.id === bookId);
 if (book) {
-book.notes = notes;
+book.notes = sanitizeInput(notes);
 saveBooks();
 }
 }
@@ -971,8 +1322,9 @@ book.status = status;
 if (status === 'finished' && book.pageCount > 0) {
 book.currentPage = book.pageCount;
 }
-saveBooks();
+if (saveBooks()) {
 renderLibrary();
+}
 }
 }
 
@@ -980,35 +1332,48 @@ function updateBookRecommendation(bookId, recommendation) {
 const book = books.find(b => b.id === bookId);
 if (book) {
 book.recommendation = book.recommendation === recommendation ? null : recommendation;
-saveBooks();
+if (saveBooks()) {
 renderLibrary();
 }
 }
+}
 
+// Enhanced remove book with confirmation
 function removeBook(bookId) {
-if (confirm('Are you sure you want to remove this book from your library?')) {
+const book = books.find(b => b.id === bookId);
+const bookTitle = book ? book.title : 'this book';
+
+if (confirm(`Are you sure you want to remove "${bookTitle}" from your library?`)) {
 books = books.filter(b => b.id !== bookId);
-saveBooks();
+if (saveBooks()) {
 renderLibrary();
+showSuccess('Book removed from library');
+}
 }
 }
 
+// Enhanced error display
 function showError(message) {
 console.error('ERROR:', message);
+
+// Remove existing errors
 document.querySelectorAll('.error').forEach(el => el.remove());
 
 const errorDiv = document.createElement('div');
 errorDiv.className = 'error';
 errorDiv.innerHTML = `
-<div>${message}</div>
+<div>${sanitizeInput(message)}</div>
 <button onclick="this.parentElement.remove()" style="background: transparent; border: 1px solid #cc5500; color: #cc5500; padding: 5px 10px; margin-top: 10px; border-radius: 4px; cursor: pointer;">
 Dismiss
 </button>
 `;
 
 const scanArea = document.querySelector('#scan-tab > div');
+if (scanArea) {
 scanArea.insertBefore(errorDiv, scanArea.firstChild);
+}
 
+// Auto-dismiss after 10 seconds
 setTimeout(() => {
 if (errorDiv.parentNode) {
 errorDiv.parentNode.removeChild(errorDiv);
@@ -1019,8 +1384,12 @@ errorDiv.parentNode.removeChild(errorDiv);
 function showSuccess(message) {
 const successDiv = document.createElement('div');
 successDiv.style.cssText = 'background: #333; color: #cc5500; padding: 15px; border-radius: 8px; margin: 20px; text-align: center; font-weight: bold; border: 1px solid #cc5500;';
-successDiv.textContent = message;
-document.querySelector('.header').after(successDiv);
+successDiv.textContent = sanitizeInput(message);
+
+const header = document.querySelector('.header');
+if (header) {
+header.after(successDiv);
+}
 
 setTimeout(() => {
 if (successDiv.parentNode) {
@@ -1029,17 +1398,48 @@ successDiv.parentNode.removeChild(successDiv);
 }, 3000);
 }
 
-// Handle page visibility changes
+// Enhanced page visibility handling
 document.addEventListener('visibilitychange', function() {
 if (document.hidden && scanningActive) {
+debugLog('Page hidden, stopping scanning');
 stopScanning();
 }
 });
 
-// Clean up on page load
-window.addEventListener('load', function() {
-console.log('🚀 App fully loaded and cleaned');
+// Enhanced beforeunload cleanup
+window.addEventListener('beforeunload', function() {
+cleanupEventListeners();
+if (scanningActive) {
+stopScanning();
+}
 });
+
+// Enhanced page load cleanup
+window.addEventListener('load', function() {
+debugLog('🚀 App fully loaded and cleaned');
+
+// Clean up any residual states
+isProcessingBarcode = false;
+lastScannedBarcode = null;
+lastScanTime = 0;
+});
+
+// Enhanced error boundary for uncaught errors
+window.addEventListener('error', function(event) {
+debugLog('Uncaught error: ' + event.error?.message);
+if (scanningActive) {
+stopScanning();
+}
+showError('An unexpected error occurred. Please refresh the page if issues persist.');
+});
+
+// Enhanced unhandled promise rejection handler
+window.addEventListener('unhandledrejection', function(event) {
+debugLog('Unhandled promise rejection: ' + event.reason);
+showError('A network or processing error occurred. Please try again.');
+event.preventDefault();
+});
+
 </script>
 </body>
 </html>
