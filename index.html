@@ -747,87 +747,94 @@
         }
 
         function scanForBarcode() {
-            if (!scanningActive || !jsQRLoaded) return;
+    if (!scanningActive || !jsQRLoaded) return;
 
-            const video = document.getElementById('video');
+    const video = document.getElementById('video');
+    if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+        requestAnimationFrame(scanForBarcode);
+        return;
+    }
 
-            if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
-                requestAnimationFrame(scanForBarcode);
-                return;
-            }
+    try {
+        if (!scanCanvas) {
+            initializeScanCanvas();
+        }
 
-            try {
-                if (!scanCanvas) {
-                    initializeScanCanvas();
+        const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) {
+            console.error('Failed to get canvas context');
+            requestAnimationFrame(scanForBarcode);
+            return;
+        }
+
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+
+        if (width === 0 || height === 0) {
+            requestAnimationFrame(scanForBarcode);
+            return;
+        }
+
+        // OPTIMIZATION 1: Reduce canvas size for faster processing
+        const scale = Math.min(1, 640 / Math.max(width, height));
+        const scaledWidth = Math.floor(width * scale);
+        const scaledHeight = Math.floor(height * scale);
+
+        if (scanCanvas.width !== scaledWidth || scanCanvas.height !== scaledHeight) {
+            scanCanvas.width = scaledWidth;
+            scanCanvas.height = scaledHeight;
+        }
+
+        ctx.clearRect(0, 0, scaledWidth, scaledHeight);
+        ctx.drawImage(video, 0, 0, scaledWidth, scaledHeight);
+
+        const imageData = ctx.getImageData(0, 0, scaledWidth, scaledHeight);
+
+        if (!imageData || !imageData.data || imageData.data.length === 0) {
+            requestAnimationFrame(scanForBarcode);
+            return;
+        }
+
+        if (typeof jsQR !== 'undefined') {
+            // OPTIMIZATION 2: Better jsQR options for barcode detection
+            const qrResult = jsQR(imageData.data, scaledWidth, scaledHeight, {
+                inversionAttempts: "dontInvert",
+                // Add these options for better barcode detection
+                locateOptions: {
+                    skipDiagonalScan: false,
+                    assumeSquare: false
                 }
+            });
 
-                const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
-                if (!ctx) {
-                    console.error('Failed to get canvas context');
-                    requestAnimationFrame(scanForBarcode);
+            if (qrResult && qrResult.data && qrResult.data.trim() !== '') {
+                const rawBarcode = qrResult.data.trim();
+                console.log('🔍 RAW BARCODE DETECTED:', rawBarcode);
+
+                // OPTIMIZATION 3: More flexible barcode validation
+                const numericPart = rawBarcode.replace(/[^\d]/g, '');
+                
+                // Accept EAN-13, EAN-8, UPC, ISBN formats
+                if (numericPart.length >= 8 && numericPart.length <= 14) {
+                    console.log('✅ VALID BARCODE DETECTED:', rawBarcode);
+                    scanningActive = false;
+                    showScanSuccess();
+                    handleBarcodeDetected(rawBarcode);
                     return;
+                } else {
+                    console.log('⚠ Invalid barcode length:', numericPart.length, 'digits');
                 }
-
-                const width = video.videoWidth;
-                const height = video.videoHeight;
-
-                if (width === 0 || height === 0) {
-                    requestAnimationFrame(scanForBarcode);
-                    return;
-                }
-
-                if (scanCanvas.width !== width || scanCanvas.height !== height) {
-                    scanCanvas.width = width;
-                    scanCanvas.height = height;
-                }
-
-                ctx.clearRect(0, 0, width, height);
-                ctx.drawImage(video, 0, 0, width, height);
-
-                const imageData = ctx.getImageData(0, 0, width, height);
-
-                if (!imageData || !imageData.data || imageData.data.length === 0) {
-                    requestAnimationFrame(scanForBarcode);
-                    return;
-                }
-
-                if (typeof jsQR !== 'undefined') {
-                    const qrResult = jsQR(imageData.data, width, height, {
-                        inversionAttempts: "dontInvert"
-                    });
-
-                    if (qrResult && qrResult.data && qrResult.data.trim() !== '') {
-                        const rawBarcode = qrResult.data.trim();
-                        console.log('🔍 RAW BARCODE DETECTED:', rawBarcode);
-                        const numericPart = rawBarcode.replace(/\D/g, '');
-
-                        if (numericPart.length >= 8 && numericPart.length <= 14) {
-                            console.log('✅ VALID BARCODE DETECTED:', rawBarcode);
-                            scanningActive = false;
-                            showScanSuccess();
-                            handleBarcodeDetected(rawBarcode);
-                            return;
-                        } else {
-                            console.log('⚠ Invalid barcode length:', numericPart.length, 'digits');
-                            const status = document.querySelector('.scan-status');
-                            if (status) {
-                                status.textContent = `❌ Invalid barcode (${numericPart.length} digits)`;
-                                setTimeout(() => {
-                                    status.textContent = '🔍 Point camera at barcode';
-                                }, 1500);
-                            }
-                        }
-                    }
-                }
-
-            } catch (error) {
-                console.error('Scan error:', error);
-            }
-
-            if (scanningActive) {
-                requestAnimationFrame(scanForBarcode);
             }
         }
+
+    } catch (error) {
+        console.error('Scan error:', error);
+    }
+
+    // OPTIMIZATION 4: Reduce frame rate to 10 FPS instead of 60 FPS
+    if (scanningActive) {
+        setTimeout(() => requestAnimationFrame(scanForBarcode), 100);
+    }
+}
 
         function showScanSuccess() {
             const overlay = document.querySelector('.scan-overlay');
