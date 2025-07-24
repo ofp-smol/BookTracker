@@ -210,6 +210,7 @@ border: 1px solid #00ff00;
 <div id="scan-tab" class="tab-content active">
 <div style="text-align: center; padding: 40px 20px;">
 <button class="scan-btn" id="scan-button">📷 Scan Book Barcode</button>
+<button class="btn btn-warning" id="camera-test-btn" style="margin-top: 10px;">🔧 Test Camera Access</button>
 <p style="color: #666; font-size: 14px;">Point your camera at a book's barcode</p>
 <div class="camera-info" id="camera-info" style="display: none;">
 <p>📱 Please allow camera access when prompted</p>
@@ -526,7 +527,11 @@ const refreshButton = document.getElementById('refresh-btn');
 const testScanButton = document.getElementById('test-scan-btn');
 const manualLookupBtn = document.getElementById('manual-lookup-btn');
 const manualIsbnInput = document.getElementById('manual-isbn');
+const cameraTestBtn = document.getElementById('camera-test-btn');
 
+if (cameraTestBtn) {
+    cameraTestBtn.addEventListener('click', testCameraAccess);
+}
 if (scanButton) {
 scanButton.addEventListener('click', handleScanButtonClick);
 }
@@ -615,9 +620,26 @@ document.getElementById('scan-result').style.display = 'none';
 // Button handlers
 async function handleScanButtonClick(e) {
     e.preventDefault();
-    debugLog('Scan button clicked - checking jsQR availability...');
+    console.log('=== SCAN BUTTON CLICKED ===');
+    debugLog('Scan button clicked - starting diagnostics...');
+    
+    // Run diagnostic first
+    debugCameraAccess();
+    
+    // Check if we're on HTTPS
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+        showError('❌ Camera requires HTTPS. Please access this app over HTTPS.');
+        return;
+    }
+    
+    // Check camera support
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showError('❌ Camera not supported in this browser.');
+        return;
+    }
     
     // Wait for jsQR to be available with timeout
+    debugLog('Checking jsQR availability...');
     let jsQRWaitAttempts = 0;
     const maxWaitAttempts = 50; // 5 seconds max wait
     
@@ -628,12 +650,16 @@ async function handleScanButtonClick(e) {
     }
     
     if (typeof jsQR === 'undefined') {
+        console.error('jsQR failed to load after 5 seconds');
         showError('Barcode scanner library failed to load. Please refresh the page and try again.');
         return;
     }
     
-    debugLog('jsQR available, starting camera...');
+    debugLog('✅ jsQR available, starting camera...');
     document.getElementById('camera-info').style.display = 'block';
+    document.getElementById('camera-info').innerHTML = '<p>🔄 Initializing camera...</p>';
+    
+    // Add a small delay before starting
     setTimeout(() => {
         startScanning();
     }, 500);
@@ -793,6 +819,30 @@ function testScanningLogic() {
             enabled: track.enabled,
             readyState: track.readyState
         })));
+    }
+}
+
+// Enhanced debugging function
+function debugCameraAccess() {
+    console.log('=== CAMERA DEBUG INFO ===');
+    console.log('1. Navigator support:', !!navigator.mediaDevices);
+    console.log('2. getUserMedia support:', !!navigator.mediaDevices?.getUserMedia);
+    console.log('3. HTTPS check:', location.protocol === 'https:' || location.hostname === 'localhost');
+    console.log('4. jsQR loaded:', typeof jsQR !== 'undefined');
+    console.log('5. Video element exists:', !!document.getElementById('video'));
+    console.log('6. Current stream:', currentStream);
+    console.log('7. Scanning active:', scanningActive);
+    
+    // Test basic camera access
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                console.log('✅ Basic camera access works');
+                stream.getTracks().forEach(track => track.stop());
+            })
+            .catch(error => {
+                console.log('❌ Basic camera access failed:', error.name, error.message);
+            });
     }
 }
 
@@ -1283,16 +1333,29 @@ renderLibrary();
 }
 
 function showError(message) {
-const errorDiv = document.createElement('div');
-errorDiv.className = 'error';
-errorDiv.textContent = message;
-const scanArea = document.querySelector('#scan-tab > div');
-scanArea.insertBefore(errorDiv, scanArea.firstChild);
-setTimeout(() => {
-if (errorDiv.parentNode) {
-errorDiv.parentNode.removeChild(errorDiv);
-}
-}, 5000);
+    console.error('ERROR:', message);
+    
+    // Remove any existing error messages
+    document.querySelectorAll('.error').forEach(el => el.remove());
+    
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error';
+    errorDiv.innerHTML = `
+        <div>${message}</div>
+        <button onclick="this.parentElement.remove()" style="background: transparent; border: 1px solid #cc5500; color: #cc5500; padding: 5px 10px; margin-top: 10px; border-radius: 4px; cursor: pointer;">
+            Dismiss
+        </button>
+    `;
+    
+    const scanArea = document.querySelector('#scan-tab > div');
+    scanArea.insertBefore(errorDiv, scanArea.firstChild);
+    
+    // Auto-remove after 10 seconds
+    setTimeout(() => {
+        if (errorDiv.parentNode) {
+            errorDiv.parentNode.removeChild(errorDiv);
+        }
+    }, 10000);
 }
 
 function showSuccess(message) {
