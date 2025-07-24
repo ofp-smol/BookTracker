@@ -230,6 +230,7 @@
             .book-actions { justify-content: center; }
         }
     </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
 </head>
 
 <body>
@@ -330,6 +331,34 @@
                 }
             }
         }
+
+function startQuagga() {
+  Quagga.init({
+    inputStream: {
+      name: "Live",
+      type: "LiveStream",
+      target: document.querySelector('#camera-container'), 
+      constraints: { facingMode: "environment" }
+    },
+    decoder: { readers: ["ean_reader", "upc_reader"] },
+    locate: true
+  }, err => {
+    if (err) {
+      console.error('Quagga init error', err);
+      showError('Barcode scanner init failed.');
+      return;
+    }
+    Quagga.start();
+  });
+
+  Quagga.onDetected(data => {
+    const code = data.codeResult.code;
+    Quagga.stop();
+    scanningActive = false;
+    showScanSuccess();
+    handleBarcodeDetected(code);
+  });
+}
 
         // Enhanced jsQR loader with better error handling
         function loadJsQR() {
@@ -533,6 +562,7 @@
         async function handleScanButtonClick(e) {
             e.preventDefault();
             debugLog('Scan button clicked');
+	startQuagga();
 
             if (!jsQRLoaded) {
                 showError('Barcode scanner library is still loading. Please wait a moment and try again.');
@@ -691,8 +721,9 @@
                 setTimeout(() => {
                     debugLog('Starting barcode scanning...');
                     scanningActive = true;
-                    initializeScanCanvas();
-                    scanForBarcode();
+                    scanWithBarcodeDetector();
+
+
                 }, 1000);
 
             } catch (error) {
