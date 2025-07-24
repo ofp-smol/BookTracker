@@ -614,16 +614,29 @@ document.getElementById('scan-result').style.display = 'none';
 
 // Button handlers
 async function handleScanButtonClick(e) {
-e.preventDefault();
-debugLog('Scan button clicked - starting camera...');
-if (typeof jsQR === 'undefined') {
-showError('Barcode scanner is still loading. Please wait a moment and try again.');
-return;
-}
-document.getElementById('camera-info').style.display = 'block';
-setTimeout(() => {
-startScanning();
-}, 500);
+    e.preventDefault();
+    debugLog('Scan button clicked - checking jsQR availability...');
+    
+    // Wait for jsQR to be available with timeout
+    let jsQRWaitAttempts = 0;
+    const maxWaitAttempts = 50; // 5 seconds max wait
+    
+    while (typeof jsQR === 'undefined' && jsQRWaitAttempts < maxWaitAttempts) {
+        debugLog(`Waiting for jsQR... attempt ${jsQRWaitAttempts + 1}`);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        jsQRWaitAttempts++;
+    }
+    
+    if (typeof jsQR === 'undefined') {
+        showError('Barcode scanner library failed to load. Please refresh the page and try again.');
+        return;
+    }
+    
+    debugLog('jsQR available, starting camera...');
+    document.getElementById('camera-info').style.display = 'block';
+    setTimeout(() => {
+        startScanning();
+    }, 500);
 }
 
 function handleStopButtonClick(e) {
@@ -647,95 +660,140 @@ testBtn.style.display = tabName === 'scan' ? 'block' : 'none';
 }
 
 async function startScanning() {
-resetScanningState();
-debugLog('Starting camera access...');
-try {
-document.getElementById('camera-info').innerHTML = '<p>🔄 Requesting camera
-access...</p>';
-let stream = null;
-const constraints = [
-{
-video: {
-facingMode: { ideal: 'environment' },
-width: { ideal: 1280, max: 1920 },
-height: { ideal: 720, max: 1080 }
-}
-},
-{
-video: {
-facingMode: { ideal: 'environment' }
-}
-},
-{
-video: true
-}
-];
-for (let i = 0; i < constraints.length; i++) {
-try {
-debugLog(`Trying camera constraint ${i + 1}...`);
-stream = await navigator.mediaDevices.getUserMedia(constraints[i]);
-debugLog(`Camera constraint ${i + 1} successful`);
-break;
-} catch (err) {
-debugLog(`Camera constraint ${i + 1} failed: ${err.name}`);
-if (i === constraints.length - 1) {
-throw err;
-}
-}
-}
-if (!stream) {
-throw new Error('No camera stream obtained');
-}
-currentStream = stream;
-debugLog('Camera access granted successfully');
-const video = document.getElementById('video');
-if (!video) {
-throw new Error('Video element not found');
-}
-video.srcObject = currentStream;
-requestCameraFocus();
-document.getElementById('camera-info').style.display = 'none';
-document.getElementById('camera-container').style.display = 'block';
-document.getElementById('stop-btn').style.display = 'block';
-document.getElementById('focus-btn').style.display = 'block';
-document.getElementById('refresh-btn').style.display = 'block';
-document.getElementById('test-scan-btn').style.display = 'block';
-document.getElementById('scan-button').style.display = 'none';
+    resetScanningState();
+    debugLog('Starting camera access...');
+    
+    try {
+        document.getElementById('camera-info').innerHTML = '<p>🔄 Requesting camera access...</p>';
+        
+        let stream = null;
+        const constraints = [
+            {
+                video: {
+                    facingMode: { ideal: 'environment' },
+                    width: { ideal: 1280, max: 1920 },
+                    height: { ideal: 720, max: 1080 },
+                    focusMode: { ideal: 'continuous' }
+                }
+            },
+            {
+                video: {
+                    facingMode: { ideal: 'environment' },
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            },
+            {
+                video: {
+                    facingMode: 'environment'
+                }
+            },
+            {
+                video: true
+            }
+        ];
 
-video.addEventListener('loadedmetadata', function() {
-debugLog('Video metadata loaded, starting barcode scanning...');
-scanningActive = true;
-initializeScanCanvas();
-scanForBarcode();
-}, { once: true });
-video.addEventListener('canplay', function() {
-if (!scanningActive) {
-debugLog('Video can play, starting barcode scanning...');
-scanningActive = true;
-initializeScanCanvas();
-scanForBarcode();
+        for (let i = 0; i < constraints.length; i++) {
+            try {
+                debugLog(`Trying camera constraint ${i + 1}...`);
+                stream = await navigator.mediaDevices.getUserMedia(constraints[i]);
+                debugLog(`Camera constraint ${i + 1} successful`);
+                break;
+            } catch (err) {
+                debugLog(`Camera constraint ${i + 1} failed: ${err.name}`);
+                if (i === constraints.length - 1) {
+                    throw err;
+                }
+            }
+        }
+
+        if (!stream) {
+            throw new Error('No camera stream obtained');
+        }
+
+        currentStream = stream;
+        debugLog('Camera access granted successfully');
+        
+        const video = document.getElementById('video');
+        if (!video) {
+            throw new Error('Video element not found');
+        }
+
+        video.srcObject = currentStream;
+        
+        // Wait for video to be ready
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error('Video load timeout'));
+            }, 10000);
+            
+            video.addEventListener('loadedmetadata', () => {
+                clearTimeout(timeout);
+                debugLog('Video metadata loaded');
+                resolve();
+            }, { once: true });
+            
+            video.addEventListener('canplay', () => {
+                clearTimeout(timeout);
+                debugLog('Video can play');
+                resolve();
+            }, { once: true });
+        });
+
+        // Initialize scanning components
+        document.getElementById('camera-info').style.display = 'none';
+        document.getElementById('camera-container').style.display = 'block';
+        document.getElementById('stop-btn').style.display = 'block';
+        document.getElementById('focus-btn').style.display = 'block';
+        document.getElementById('refresh-btn').style.display = 'block';
+        document.getElementById('test-scan-btn').style.display = 'block';
+        document.getElementById('scan-button').style.display = 'none';
+
+        // Start scanning after a short delay
+        setTimeout(() => {
+            debugLog('Starting barcode scanning...');
+            scanningActive = true;
+            initializeScanCanvas();
+            scanForBarcode();
+        }, 1000);
+
+    } catch (error) {
+        debugLog('Camera error occurred: ' + error.name + ' - ' + error.message);
+        document.getElementById('camera-info').style.display = 'none';
+        
+        if (error.name === 'NotAllowedError') {
+            showError('❌ Camera permission denied. Please click "Allow" when prompted and try again.');
+        } else if (error.name === 'NotFoundError') {
+            showError('❌ No camera found on this device.');
+        } else if (error.name === 'NotSupportedError') {
+            showError('❌ Camera not supported on this device.');
+        } else if (error.name === 'NotReadableError') {
+            showError('❌ Camera is being used by another application.');
+        } else if (error.name === 'OverconstrainedError') {
+            showError('❌ Camera constraints could not be satisfied.');
+        } else if (error.name === 'SecurityError') {
+            showError('❌ Camera access blocked by security policy. Please use HTTPS.');
+        } else {
+            showError('❌ Camera error: ' + error.message + '. Try refreshing the page.');
+        }
+    }
 }
-}, { once: true });
-} catch (error) {
-debugLog('Camera error occurred: ' + error.name + ' - ' + error.message);
-document.getElementById('camera-info').style.display = 'none';
-if (error.name === 'NotAllowedError') {
-showError('❌ Camera permission denied. Please click "Allow" when prompted and
-try again.');
-} else if (error.name === 'NotFoundError') {
-showError('❌ No camera found on this device.');
-} else if (error.name === 'NotSupportedError') {
-showError('❌ Camera not supported on this device.');
-} else if (error.name === 'NotReadableError') {
-showError('❌ Camera is being used by another application.');
-} else if (error.name === 'OverconstrainedError') {
-showError('❌ Camera constraints could not be satisfied.');
-} else if (error.name === 'SecurityError') {
-showError('❌ Camera access blocked by security policy. Please use HTTPS.');
-} else {
-showError('❌ Camera error: ' + error.message);
-}
-}
+
+function testScanningLogic() {
+    console.log('Testing scanning logic...');
+    console.log('jsQR available:', typeof jsQR !== 'undefined');
+    console.log('Video element:', document.getElementById('video'));
+    console.log('Canvas element:', scanCanvas);
+    console.log('Scanning active:', scanningActive);
+    console.log('Current stream:', currentStream);
+    
+    if (currentStream) {
+        console.log('Stream tracks:', currentStream.getTracks().map(track => ({
+            kind: track.kind,
+            enabled: track.enabled,
+            readyState: track.readyState
+        })));
+    }
 }
 
 function stopScanning() {
@@ -770,63 +828,94 @@ scanCanvas = document.createElement('canvas');
 }
 
 function scanForBarcode() {
-if (!scanningActive) return;
-const video = document.getElementById('video');
-if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
-requestAnimationFrame(scanForBarcode);
-return;
-}
-try {
-const ctx = scanCanvas.getContext('2d'); // Removed willReadFrequently option
-const width = video.videoWidth;
-const height = video.videoHeight;
-if (width === 0 || height === 0) {
-requestAnimationFrame(scanForBarcode);
-return;
-}
-scanCanvas.width = width;
-scanCanvas.height = height;
-ctx.clearRect(0, 0, width, height);
-ctx.drawImage(video, 0, 0, width, height);
-const imageData = ctx.getImageData(0, 0, width, height);
-if (!imageData || !imageData.data || imageData.data.length === 0) {
-requestAnimationFrame(scanForBarcode);
-return;
-}
-if (typeof jsQR !== 'undefined') {
-const qrResult = jsQR(imageData.data, width, height, {
-inversionAttempts: "both"
-});
-if (qrResult && qrResult.data && qrResult.data.trim() !== '') {
-const rawBarcode = qrResult.data.trim();
-console.log('🔍 RAW BARCODE DETECTED:', rawBarcode);
-const numericPart = rawBarcode.replace(/\D/g, '');
-// Accept wider range of barcode lengths (8-14 digits)
-if (numericPart.length >= 8 && numericPart.length <= 14) {
-console.log('✅ VALID BARCODE DETECTED:', rawBarcode);
-scanningActive = false;
-showScanSuccess();
-handleBarcodeDetected(rawBarcode);
-return;
-} else {
-console.log('⚠ Invalid barcode length:', numericPart.length, 'digits');
-// Show temporary feedback for invalid barcodes
-const status = document.querySelector('.scan-status');
-if (status) {
-status.textContent = `❌ Invalid barcode (${numericPart.length} digits)`;
-setTimeout(() => {
-status.textContent = '🔍 Point camera at barcode';
-}, 1500);
-}
-}
-}
-}
-} catch (error) {
-console.error('Scan error:', error);
-}
-if (scanningActive) {
-requestAnimationFrame(scanForBarcode);
-}
+    if (!scanningActive) return;
+    
+    const video = document.getElementById('video');
+    if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+        requestAnimationFrame(scanForBarcode);
+        return;
+    }
+
+    try {
+        // Ensure canvas is properly initialized
+        if (!scanCanvas) {
+            initializeScanCanvas();
+        }
+        
+        const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) {
+            console.error('Failed to get canvas context');
+            requestAnimationFrame(scanForBarcode);
+            return;
+        }
+        
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        
+        if (width === 0 || height === 0) {
+            requestAnimationFrame(scanForBarcode);
+            return;
+        }
+
+        // Set canvas dimensions
+        if (scanCanvas.width !== width || scanCanvas.height !== height) {
+            scanCanvas.width = width;
+            scanCanvas.height = height;
+        }
+
+        // Clear and draw video frame
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(video, 0, 0, width, height);
+        
+        // Get image data
+        const imageData = ctx.getImageData(0, 0, width, height);
+        
+        if (!imageData || !imageData.data || imageData.data.length === 0) {
+            requestAnimationFrame(scanForBarcode);
+            return;
+        }
+
+        // Scan for QR/barcode with jsQR
+        if (typeof jsQR !== 'undefined') {
+            const qrResult = jsQR(imageData.data, width, height, {
+                inversionAttempts: "both"
+            });
+            
+            if (qrResult && qrResult.data && qrResult.data.trim() !== '') {
+                const rawBarcode = qrResult.data.trim();
+                console.log('🔍 RAW BARCODE DETECTED:', rawBarcode);
+                
+                const numericPart = rawBarcode.replace(/\D/g, '');
+                
+                // Accept wider range of barcode lengths (8-14 digits)
+                if (numericPart.length >= 8 && numericPart.length <= 14) {
+                    console.log('✅ VALID BARCODE DETECTED:', rawBarcode);
+                    scanningActive = false;
+                    showScanSuccess();
+                    handleBarcodeDetected(rawBarcode);
+                    return;
+                } else {
+                    console.log('⚠ Invalid barcode length:', numericPart.length, 'digits');
+                    // Show temporary feedback for invalid barcodes
+                    const status = document.querySelector('.scan-status');
+                    if (status) {
+                        status.textContent = `❌ Invalid barcode (${numericPart.length} digits)`;
+                        setTimeout(() => {
+                            status.textContent = '🔍 Point camera at barcode';
+                        }, 1500);
+                    }
+                }
+            }
+        } else {
+            console.error('jsQR not available during scan');
+        }
+    } catch (error) {
+        console.error('Scan error:', error);
+    }
+
+    if (scanningActive) {
+        requestAnimationFrame(scanForBarcode);
+    }
 }
 
 async function handleBarcodeDetected(barcode) {
