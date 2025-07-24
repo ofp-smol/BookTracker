@@ -1,25 +1,31 @@
-const CACHE_NAME = 'booktracker-debug-v1.4';
+const CACHE_NAME = 'booktracker-v1.5';
+
 const urlsToCache = [
     '/',
     '/index.html',
     '/manifest.json',
     '/icon-192.png',
     '/icon-512.png',
-    'https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.min.js'
+    'https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js'
 ];
 
 // Install service worker
 self.addEventListener('install', event => {
+    console.log('SW: Installing...');
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => {
-                console.log('Opened cache');
+                console.log('SW: Cache opened');
                 return cache.addAll(urlsToCache);
             })
+            .then(() => {
+                console.log('SW: All files cached successfully');
+            })
             .catch(error => {
-                console.error('Cache installation failed:', error);
+                console.error('SW: Cache installation failed:', error);
             })
     );
+    
     // Force the waiting service worker to become the active service worker
     self.skipWaiting();
 });
@@ -28,16 +34,17 @@ self.addEventListener('install', event => {
 self.addEventListener('fetch', event => {
     // Skip caching for API calls (they need internet anyway)
     if (event.request.url.includes('googleapis.com') ||
-        event.request.url.includes('openlibrary.org')) {
+        event.request.url.includes('openlibrary.org') ||
+        event.request.method !== 'GET') {
         return;
     }
 
     event.respondWith(
         caches.match(event.request)
             .then(response => {
-                // Return cached version or fetch from network
+                // Return cached version if available
                 if (response) {
-                    console.log('Serving from cache:', event.request.url);
+                    console.log('SW: Serving from cache:', event.request.url);
                     return response;
                 }
 
@@ -51,6 +58,7 @@ self.addEventListener('fetch', event => {
 
                         // Clone the response since it can only be consumed once
                         const responseToCache = response.clone();
+
                         caches.open(CACHE_NAME)
                             .then(cache => {
                                 cache.put(event.request, responseToCache);
@@ -59,9 +67,9 @@ self.addEventListener('fetch', event => {
                         return response;
                     })
                     .catch(error => {
-                        console.error('Fetch failed:', error);
-                        // Return a custom offline page if you have one
-                        // return caches.match('/offline.html');
+                        console.error('SW: Fetch failed:', error);
+                        // Could return a custom offline page here if needed
+                        throw error;
                     });
             })
     );
@@ -69,18 +77,22 @@ self.addEventListener('fetch', event => {
 
 // Activate service worker
 self.addEventListener('activate', event => {
+    console.log('SW: Activating...');
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
                 cacheNames.map(cacheName => {
                     if (cacheName !== CACHE_NAME) {
-                        console.log('Deleting old cache:', cacheName);
+                        console.log('SW: Deleting old cache:', cacheName);
                         return caches.delete(cacheName);
                     }
                 })
             );
+        }).then(() => {
+            console.log('SW: Activated successfully');
         })
     );
+
     // Take control of all clients immediately
     self.clients.claim();
 });
