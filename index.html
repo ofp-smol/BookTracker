@@ -84,6 +84,16 @@ font-size: 14px;
 font-weight: bold;
 transition: all 0.3s ease;
 }
+.scan-status.scanning {
+background: rgba(204, 85, 0, 0.9) !important;
+animation: scanPulse 2s infinite;
+}
+.scan-status.initializing {
+background: rgba(255, 165, 0, 0.9) !important;
+}
+.scan-status.ready {
+background: rgba(0, 150, 0, 0.9) !important;
+}
 .book-card {
 background: #333333; border-radius: 15px; padding: 20px; margin-bottom: 20px;
 box-shadow: 0 4px 15px rgba(0,0,0,0.3); color: white;
@@ -209,6 +219,7 @@ font-size: 12px; display: none;
 <div class="camera-info" id="camera-info" style="display: none;">
 <p>📱 Please allow camera access when prompted</p>
 <p>This lets the app scan book barcodes</p>
+<p><small>💡 Hold steady and wait for the scanner to focus</small></p>
 </div>
 <div id="camera-container" class="camera-container" style="display: none;">
 <video id="video" autoplay muted playsinline></video>
@@ -404,9 +415,8 @@ debugLog('SW registration failed: ' + registrationError);
 });
 }
 
-// Enhanced Quagga initialization with detailed logging
+// Enhanced Quagga initialization with detailed logging and improved timing
 function startQuagga() {
-// Add detailed logging
 console.log('🔍 startQuagga() called');
 console.log('🔍 Quagga available:', typeof Quagga !== 'undefined');
 console.log('🔍 quaggaInitialized:', quaggaInitialized);
@@ -437,6 +447,14 @@ try {
 Quagga.start();
 scanningActive = true;
 console.log('✅ Quagga restarted successfully');
+
+// Update UI to show active scanning
+const status = document.querySelector('.scan-status');
+if (status) {
+status.textContent = '📱 Position barcode in frame';
+status.className = 'scan-status scanning';
+}
+
 // Re-register the handler on the running instance
 quaggaDetectionHandler = async (data) => {
 console.log('🎯 Barcode detected in restarted instance:', data.codeResult.code);
@@ -472,7 +490,13 @@ return;
 
 console.log('✅ Camera container found, initializing Quagga...');
 
-// Wrap Quagga.init in try-catch
+// Show initial scanning status
+const status = document.querySelector('.scan-status');
+if (status) {
+status.textContent = '⏳ Initializing scanner...';
+status.className = 'scan-status initializing';
+}
+
 try {
 Quagga.init({
 inputStream: {
@@ -492,16 +516,13 @@ locate: true,
 locator: {
 patchSize: "medium",
 halfSample: true
-}
+},
+frequency: 5, // Reduce scanning frequency to avoid aggressive detection
+debug: DEBUG_MODE
 }, (err) => {
 console.log('📡 Quagga.init callback called');
 if (err) {
 console.error('❌ Quagga init error:', err);
-console.error('❌ Error details:', {
-name: err.name,
-message: err.message,
-stack: err.stack
-});
 showError('Barcode scanner init failed: ' + err.message);
 quaggaInitialized = false;
 return;
@@ -510,16 +531,32 @@ return;
 console.log('✅ Quagga initialized successfully');
 quaggaInitialized = true;
 
-// Create and register the detection handler
+// Create detection handler with debouncing
 console.log('🎯 Creating detection handler...');
 quaggaDetectionHandler = async (data) => {
 console.log('🎯 Barcode detected:', data.codeResult.code);
 console.log('🎯 Detection state - scanningActive:', scanningActive, 'isProcessingBarcode:', isProcessingBarcode);
+
 if (!scanningActive || isProcessingBarcode) {
 console.log('⏭️ Ignoring detection (not active or already processing)');
 return;
 }
+
+// Additional validation - check barcode quality
+if (!data.codeResult || !data.codeResult.code) {
+console.log('⚠️ Invalid barcode data, ignoring');
+return;
+}
+
 const code = data.codeResult.code;
+
+// Basic ISBN validation before processing
+const cleanedCode = code.replace(/\D/g, '');
+if (cleanedCode.length < 8) {
+console.log('⚠️ Barcode too short, ignoring:', code);
+return;
+}
+
 try {
 console.log('🛑 Stopping Quagga...');
 Quagga.stop();
@@ -530,23 +567,42 @@ await handleBarcodeDetected(code);
 } catch (error) {
 console.error('❌ Error handling barcode:', error);
 isProcessingBarcode = false;
+// Restart scanning on error
+setTimeout(() => {
+if (!scanningActive && quaggaInitialized) {
+try {
+Quagga.start();
+scanningActive = true;
+} catch (restartError) {
+console.error('❌ Error restarting after error:', restartError);
+}
+}
+}, 2000);
 }
 };
 
 Quagga.on('detected', quaggaDetectionHandler);
 console.log('✅ Detection handler registered');
 
-// Start scanning
+// Start scanning with delay to allow camera to focus
+setTimeout(() => {
 try {
-console.log('▶️ Starting Quagga...');
+console.log('▶️ Starting Quagga after delay...');
 Quagga.start();
 scanningActive = true;
 console.log('✅ Quagga started successfully');
+
+// Update status to show ready for scanning
+if (status) {
+status.textContent = '📱 Position barcode in frame';
+status.className = 'scan-status ready';
+}
 } catch (startError) {
 console.error('❌ Error starting Quagga:', startError);
 quaggaInitialized = false;
 showError('Failed to start barcode scanner: ' + startError.message);
 }
+}, 1500); // Give camera more time to initialize and focus
 });
 } catch (initError) {
 console.error('❌ Error calling Quagga.init:', initError);
@@ -801,24 +857,40 @@ video.srcObject = currentStream;
 await new Promise((resolve, reject) => {
 const timeout = setTimeout(() => {
 reject(new Error('Video load timeout'));
-}, 10000);
+}, 15000); // Increased timeout
 
 const onCanPlay = () => {
 clearTimeout(timeout);
 video.removeEventListener('canplay', onCanPlay);
+video.removeEventListener('loadedmetadata', onCanPlay);
 video.removeEventListener('error', onError);
 console.log('✅ Video can play');
+
+// Additional check - wait for actual video dimensions
+if (video.videoWidth > 0 && video.videoHeight > 0) {
 resolve();
+} else {
+// Wait a bit more for video to be fully ready
+setTimeout(() => {
+if (video.videoWidth > 0 && video.videoHeight > 0) {
+resolve();
+} else {
+reject(new Error('Video dimensions not available'));
+}
+}, 1000);
+}
 };
 
 const onError = (e) => {
 clearTimeout(timeout);
 video.removeEventListener('canplay', onCanPlay);
+video.removeEventListener('loadedmetadata', onCanPlay);
 video.removeEventListener('error', onError);
 reject(new Error('Video load error: ' + (e.message || 'Unknown video error')));
 };
 
 video.addEventListener('canplay', onCanPlay);
+video.addEventListener('loadedmetadata', onCanPlay); // Additional event
 video.addEventListener('error', onError);
 });
 
@@ -827,11 +899,11 @@ document.getElementById('camera-container').style.display = 'block';
 document.getElementById('stop-btn').style.display = 'block';
 document.getElementById('scan-button').style.display = 'none';
 
-// Start Quagga after camera is ready
+// Start Quagga after camera is ready with increased delay
 setTimeout(() => {
 console.log('⏰ Quagga timeout reached, calling startQuagga()');
 startQuagga();
-}, 1000);
+}, 2000); // Increased from 1000ms to 2000ms
 
 } catch (error) {
 console.error('📹 Camera error occurred:', error.name, '-', error.message);
