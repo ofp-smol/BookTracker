@@ -42,6 +42,7 @@ color: #fff;
 .tab-content.active { display: block; }
 .scan-btn {
 background: linear-gradient(135deg, #cc5500 0%, #1a1a1a 100%);
+
 color: white; border: none; padding: 20px 40px; border-radius: 50px;
 font-size: 18px; font-weight: bold; cursor: pointer; margin: 20px 0;
 box-shadow: 0 4px 15px rgba(204, 85, 0, 0.4); width: 100%; max-width: 300px;
@@ -86,6 +87,7 @@ transition: all 0.3s ease;
 .book-card {
 background: #333333; border-radius: 15px; padding: 20px; margin-bottom: 20px;
 box-shadow: 0 4px 15px rgba(0,0,0,0.3); color: white;
+
 }
 .book-info { display: flex; gap: 15px; margin-bottom: 15px; }
 .book-cover {
@@ -115,7 +117,8 @@ width: 100%; min-height: 80px; padding: 10px;
 border: 1px solid #555; border-radius: 8px; margin: 10px 0;
 background: #1a1a1a; color: white; font-weight: bold;
 }
-.page-input { display: flex; align-items: center; gap: 10px; margin: 10px 0; color: white; font-weight: bold; }
+.page-input { display: flex; align-items: center; gap: 10px; margin: 10px 0; color: white;
+font-weight: bold; }
 .page-input input {
 width: 80px; padding: 5px 10px; border: 1px solid #555;
 border-radius: 4px; text-align: center; background: #1a1a1a; color: white; font-weight: bold;
@@ -129,6 +132,7 @@ padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;
 .badge-dnf { background: #666; color: white; }
 .badge-recommend { background: #cc5500; color: white; }
 .badge-not-recommend { background: #1a1a1a; color: white; }
+
 .empty-state { text-align: center; padding: 60px 20px; color: white; font-weight: bold; }
 .loading { text-align: center; padding: 40px; color: white; font-weight: bold; }
 .spinner {
@@ -173,6 +177,7 @@ background: #1a1a1a; color: white; font-weight: bold; font-size: 16px;
 background: #1a1a1a; padding: 10px; border-radius: 8px; margin: 10px 0;
 font-size: 12px; color: #ccc; text-align: center;
 }
+
 .offline-indicator {
 background: #666; color: white; padding: 10px; text-align: center;
 font-size: 12px; display: none;
@@ -210,12 +215,16 @@ font-size: 12px; display: none;
 <div class="scan-overlay"></div>
 <div class="scan-status">🔍 Point camera at barcode</div>
 </div>
-<button id="stop-btn" class="btn btn-danger" style="display: none; margin-top: 10px;">Stop Scanning</button>
+<button id="stop-btn" class="btn btn-danger" style="display: none; margin-top: 10px;">Stop
+Scanning</button>
 <!-- Manual ISBN input section -->
 <div class="manual-input-section">
 <h3>📝 Manual ISBN Entry</h3>
-<p style="color: #ccc; font-size: 12px; margin-bottom: 10px;">Enter ISBN if scanning doesn't work</p>
-<input type="text" id="manual-isbn" class="isbn-input" placeholder="Enter ISBN..." maxlength="13">
+<p style="color: #ccc; font-size: 12px; margin-bottom: 10px;">Enter ISBN if scanning doesn't
+work</p>
+
+<input type="text" id="manual-isbn" class="isbn-input" placeholder="Enter ISBN..."
+maxlength="13">
 <br>
 <button class="btn btn-primary" id="manual-lookup-btn">🔍 Look Up Book</button>
 </div>
@@ -242,8 +251,10 @@ font-size: 12px; display: none;
 <button id="install-btn">Install</button>
 <button id="dismiss-install" style="background: transparent; color: white;">✕</button>
 </div>
-
 <script>
+// Add debug mode at the beginning
+const DEBUG_MODE = true; // Set to false for production
+
 // Global variables with proper initialization
 let quaggaDetectionHandler = null;
 let currentStream = null;
@@ -258,6 +269,7 @@ let eventListenerCleanup = [];
 
 // Enhanced localStorage safety wrapper
 const StorageManager = {
+
 isAvailable() {
 try {
 const test = '__storage_test__';
@@ -314,9 +326,11 @@ timeout = setTimeout(later, wait);
 };
 }
 
-// Debug logging
+// Enhanced debug logging
 function debugLog(message) {
+if (DEBUG_MODE) {
 console.log('BookTracker:', message);
+}
 }
 
 // Network status monitoring
@@ -390,51 +404,76 @@ debugLog('SW registration failed: ' + registrationError);
 });
 }
 
-// Enhanced Quagga initialization with proper cleanup
+// Enhanced Quagga initialization with detailed logging
 function startQuagga() {
+// Add detailed logging
+console.log('🔍 startQuagga() called');
+console.log('🔍 Quagga available:', typeof Quagga !== 'undefined');
+console.log('🔍 quaggaInitialized:', quaggaInitialized);
+console.log('🔍 scanningActive:', scanningActive);
+
+// Check if Quagga is loaded
+if (typeof Quagga === 'undefined') {
+console.error('❌ Quagga is not loaded');
+showError('Barcode scanner library failed to load. Please refresh the page.');
+return;
+}
+
 // Clean up any existing handler first
 if (quaggaDetectionHandler) {
+try {
 Quagga.off('detected', quaggaDetectionHandler);
+console.log('✅ Removed old Quagga handler');
+} catch (e) {
+console.error('❌ Error removing old Quagga handler:', e);
+}
 quaggaDetectionHandler = null;
 }
 
 // Prevent multiple initializations
 if (quaggaInitialized) {
-debugLog('Quagga already initialized, starting existing instance');
+console.log('🔄 Quagga already initialized, restarting...');
 try {
 Quagga.start();
 scanningActive = true;
+console.log('✅ Quagga restarted successfully');
 // Re-register the handler on the running instance
 quaggaDetectionHandler = async (data) => {
+console.log('🎯 Barcode detected in restarted instance:', data.codeResult.code);
 if (!scanningActive || isProcessingBarcode) return;
 const code = data.codeResult.code;
-debugLog('Barcode detected: ' + code);
 try {
 Quagga.stop();
 scanningActive = false;
 showScanSuccess();
 await handleBarcodeDetected(code);
 } catch (error) {
-debugLog('Error handling barcode: ' + error.message);
+console.error('❌ Error handling barcode in restart:', error);
 isProcessingBarcode = false;
 }
 };
 Quagga.on('detected', quaggaDetectionHandler);
-} catch (error) {
-debugLog('Error restarting Quagga: ' + error.message);
-quaggaInitialized = false;
-startQuagga(); // fallback to full init
-}
+console.log('✅ Detection handler re-registered');
 return;
+} catch (error) {
+console.error('❌ Error restarting Quagga:', error);
+quaggaInitialized = false;
+// fallback to full init
+}
 }
 
-debugLog('Starting Quagga barcode scanner...');
+console.log('🚀 Starting fresh Quagga initialization...');
 const cameraContainer = document.querySelector('#camera-container');
 if (!cameraContainer) {
+console.error('❌ Camera container not found');
 showError('Camera container not found');
 return;
 }
 
+console.log('✅ Camera container found, initializing Quagga...');
+
+// Wrap Quagga.init in try-catch
+try {
 Quagga.init({
 inputStream: {
 name: "Live",
@@ -454,42 +493,65 @@ locator: {
 patchSize: "medium",
 halfSample: true
 }
-}, err => {
+}, (err) => {
+console.log('📡 Quagga.init callback called');
 if (err) {
-console.error('Quagga init error', err);
+console.error('❌ Quagga init error:', err);
+console.error('❌ Error details:', {
+name: err.name,
+message: err.message,
+stack: err.stack
+});
 showError('Barcode scanner init failed: ' + err.message);
 quaggaInitialized = false;
 return;
 }
+
+console.log('✅ Quagga initialized successfully');
 quaggaInitialized = true;
-debugLog('Quagga initialized successfully');
 
 // Create and register the detection handler
+console.log('🎯 Creating detection handler...');
 quaggaDetectionHandler = async (data) => {
-if (!scanningActive || isProcessingBarcode) return;
+console.log('🎯 Barcode detected:', data.codeResult.code);
+console.log('🎯 Detection state - scanningActive:', scanningActive, 'isProcessingBarcode:', isProcessingBarcode);
+if (!scanningActive || isProcessingBarcode) {
+console.log('⏭️ Ignoring detection (not active or already processing)');
+return;
+}
 const code = data.codeResult.code;
-debugLog('Barcode detected: ' + code);
 try {
+console.log('🛑 Stopping Quagga...');
 Quagga.stop();
 scanningActive = false;
 showScanSuccess();
+console.log('📖 Handling barcode...');
 await handleBarcodeDetected(code);
 } catch (error) {
-debugLog('Error handling barcode: ' + error.message);
+console.error('❌ Error handling barcode:', error);
 isProcessingBarcode = false;
 }
 };
+
 Quagga.on('detected', quaggaDetectionHandler);
+console.log('✅ Detection handler registered');
 
 // Start scanning
 try {
+console.log('▶️ Starting Quagga...');
 Quagga.start();
 scanningActive = true;
+console.log('✅ Quagga started successfully');
 } catch (startError) {
-debugLog('Error starting Quagga: ' + startError.message);
+console.error('❌ Error starting Quagga:', startError);
 quaggaInitialized = false;
+showError('Failed to start barcode scanner: ' + startError.message);
 }
 });
+} catch (initError) {
+console.error('❌ Error calling Quagga.init:', initError);
+showError('Failed to initialize barcode scanner: ' + initError.message);
+}
 }
 
 // Enhanced scanning cleanup
@@ -620,21 +682,24 @@ debugLog('App initialized successfully');
 // Enhanced button handlers
 function handleScanButtonClick(e) {
 e.preventDefault();
-debugLog('Scan button clicked');
-
+console.log('🖱️ Scan button clicked');
 if (!checkCameraSupport()) {
+console.log('❌ Camera support check failed');
 return;
 }
 
 if (!navigator.onLine) {
+console.log('❌ No internet connection');
 showError('Internet connection required for book lookup');
 return;
 }
 
+console.log('✅ Starting scan process...');
 document.getElementById('camera-info').style.display = 'block';
 document.getElementById('camera-info').innerHTML = '<p>🔄 Initializing camera...</p>';
 
 setTimeout(() => {
+console.log('⏰ Camera timeout reached, calling startScanning()');
 startScanning();
 }, 500);
 }
@@ -695,6 +760,7 @@ cleanupEventListeners();
 
 document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
 document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
 document.querySelectorAll('.tab-content').forEach(content =>
 content.classList.remove('active'));
 document.getElementById(tabName + '-tab').classList.add('active');
@@ -704,9 +770,13 @@ if (tabName === 'library') renderLibrary();
 
 // Enhanced camera startup with better error handling
 async function startScanning() {
-debugLog('Starting camera access...');
-
+console.log('📹 Starting camera access...');
 try {
+// Check if camera is supported first
+if (!navigator.mediaDevices?.getUserMedia) {
+throw new Error('Camera API not supported in this browser');
+}
+
 document.getElementById('camera-info').innerHTML = '<p>🔄 Requesting camera access...</p>';
 
 const stream = await navigator.mediaDevices.getUserMedia({
@@ -718,7 +788,7 @@ height: { ideal: 720, max: 1080 }
 });
 
 currentStream = stream;
-debugLog('Camera access granted successfully');
+console.log('✅ Camera access granted successfully');
 
 const video = document.getElementById('video');
 if (!video) {
@@ -727,21 +797,29 @@ throw new Error('Video element not found');
 
 video.srcObject = currentStream;
 
+// Enhanced video loading with better error handling
 await new Promise((resolve, reject) => {
 const timeout = setTimeout(() => {
 reject(new Error('Video load timeout'));
 }, 10000);
 
-video.addEventListener('canplay', () => {
+const onCanPlay = () => {
 clearTimeout(timeout);
-debugLog('Video can play');
+video.removeEventListener('canplay', onCanPlay);
+video.removeEventListener('error', onError);
+console.log('✅ Video can play');
 resolve();
-}, { once: true });
+};
 
-video.addEventListener('error', (e) => {
+const onError = (e) => {
 clearTimeout(timeout);
-reject(new Error('Video load error: ' + e.message));
-}, { once: true });
+video.removeEventListener('canplay', onCanPlay);
+video.removeEventListener('error', onError);
+reject(new Error('Video load error: ' + (e.message || 'Unknown video error')));
+};
+
+video.addEventListener('canplay', onCanPlay);
+video.addEventListener('error', onError);
 });
 
 document.getElementById('camera-info').style.display = 'none';
@@ -751,11 +829,13 @@ document.getElementById('scan-button').style.display = 'none';
 
 // Start Quagga after camera is ready
 setTimeout(() => {
+console.log('⏰ Quagga timeout reached, calling startQuagga()');
 startQuagga();
 }, 1000);
 
 } catch (error) {
-debugLog('Camera error occurred: ' + error.name + ' - ' + error.message);
+console.error('📹 Camera error occurred:', error.name, '-', error.message);
+console.error('📹 Full camera error:', error);
 document.getElementById('camera-info').style.display = 'none';
 
 // Enhanced error messages
@@ -772,6 +852,9 @@ TypeError: '❌ Network error occurred while accessing camera.'
 
 const message = errorMessages[error.name] || `❌ Camera error: ${error.message}. Try refreshing the page.`;
 showError(message);
+
+// Don't let this error bubble up to the global handler
+return; // Important: return here instead of throwing
 }
 }
 
@@ -837,7 +920,6 @@ if (isProcessingBarcode) {
 debugLog('Already processing a barcode, ignoring duplicate');
 return;
 }
-
 isProcessingBarcode = true;
 
 try {
@@ -981,13 +1063,10 @@ pageCount: book.pageCount || 0,
 coverUrl: book.imageLinks?.thumbnail?.replace('http:', 'https:') || '',
 publishedDate: sanitizeInput(book.publishedDate || 'Unknown')
 };
-
 console.log('📚 Google Books Result:', result);
 return result;
 }
-
 return null;
-
 } catch (error) {
 clearTimeout(timeoutId);
 if (error.name === 'AbortError') {
@@ -1036,13 +1115,10 @@ pageCount: book.number_of_pages || 0,
 coverUrl: book.cover?.medium || '',
 publishedDate: sanitizeInput(book.publish_date || 'Unknown')
 };
-
 console.log('📚 OpenLibrary Result:', result);
 return result;
 }
-
 return null;
-
 } catch (error) {
 clearTimeout(timeoutId);
 if (error.name === 'AbortError') {
@@ -1155,7 +1231,6 @@ manualInput.value = '';
 
 // Reset processing flag and restart scanning
 isProcessingBarcode = false;
-
 setTimeout(() => {
 if (!scanningActive && quaggaInitialized) {
 startQuagga();
@@ -1194,6 +1269,7 @@ return;
 
 const booksHtml = books.map(book => {
 const progress = book.pageCount > 0 ? (book.currentPage / book.pageCount) * 100 : 0;
+
 const coverImg = book.coverUrl ?
 `<img src="${book.coverUrl}" alt="${book.title}" class="book-cover" loading="lazy" onerror="this.style.display='none'">` :
 `<div class="book-cover" style="display:flex;align-items:center;justify-content:center;color:#666;">📖</div>`;
@@ -1417,7 +1493,6 @@ stopScanning();
 // Enhanced page load cleanup
 window.addEventListener('load', function() {
 debugLog('🚀 App fully loaded and cleaned');
-
 // Clean up any residual states
 isProcessingBarcode = false;
 lastScannedBarcode = null;
@@ -1426,17 +1501,51 @@ lastScanTime = 0;
 
 // Enhanced error boundary for uncaught errors
 window.addEventListener('error', function(event) {
-debugLog('Uncaught error: ' + event.error?.message);
+const error = event.error;
+const message = error?.message || 'Unknown error';
+const filename = event.filename || 'Unknown file';
+const lineno = event.lineno || 'Unknown line';
+
+debugLog(`Uncaught error: ${message} at ${filename}:${lineno}`);
+console.error('Full error details:', {
+message: message,
+filename: filename,
+lineno: lineno,
+colno: event.colno,
+error: error,
+stack: error?.stack
+});
+
+// Only stop scanning if it's actually running
 if (scanningActive) {
+debugLog('Stopping scanning due to error');
 stopScanning();
 }
-showError('An unexpected error occurred. Please refresh the page if issues persist.');
+
+// Only show error for critical issues, not minor ones
+if (message.includes('Quagga') || message.includes('camera') || message.includes('video')) {
+showError('Scanner error occurred. Please try again or refresh the page.');
+}
 });
 
 // Enhanced unhandled promise rejection handler
 window.addEventListener('unhandledrejection', function(event) {
-debugLog('Unhandled promise rejection: ' + event.reason);
-showError('A network or processing error occurred. Please try again.');
+const reason = event.reason;
+debugLog('Unhandled promise rejection: ' + reason);
+console.error('Promise rejection details:', reason);
+
+// Don't show errors for network timeouts or common API failures
+if (typeof reason === 'string' && (
+reason.includes('timeout') || 
+reason.includes('fetch') || 
+reason.includes('network')
+)) {
+debugLog('Network-related promise rejection, not showing error to user');
+event.preventDefault();
+return;
+}
+
+showError('A processing error occurred. Please try again.');
 event.preventDefault();
 });
 
