@@ -418,12 +418,12 @@ if (isbn.includes(pattern)) return true;
 }
 
 // Be more permissive with length and prefix checks
-if (isbn.length < 7) return true; // Changed from 8 to 7
+if (isbn.length < 8) return true; // Changed from 8 to 7
 // Removed the overly strict prefix checks
 
 // Allow 8-digit codes for testing - comment out the rejection
-// if (isbn.length === 8) {
-//     console.log('⚠️ 8-digit code detected, likely not a book ISBN:', isbn);
+// if (isbn.length === 9) {
+//     console.log('⚠️ 9-digit code detected, likely not a book ISBN:', isbn);
 //     return true;
 // }
 
@@ -644,7 +644,7 @@ const code = data.codeResult.code;
 
 // Enhanced ISBN validation before processing - RELAXED
 const cleanedCode = code.replace(/\D/g, '');
-if (cleanedCode.length < 7 || cleanedCode.length > 14) { // Changed from 10 to 7
+if (cleanedCode.length < 8 || cleanedCode.length > 13) { // Changed from 10 to 7
 console.log('⚠️ Invalid barcode length for ISBN, ignoring:', code);
 return;
 }
@@ -656,7 +656,7 @@ return;
 }
 
 // RELAXED: Check for minimum barcode format requirements
-if (!/^\d{7,14}$/.test(cleanedCode)) { // Changed from 10 to 7
+if (!/^\d{8,13}$/.test(cleanedCode)) { // Changed from 10 to 7
 console.log('⚠️ Invalid barcode format, ignoring:', code);
 return;
 }
