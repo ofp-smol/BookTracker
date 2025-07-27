@@ -51,20 +51,20 @@ position: relative; margin: 20px auto; max-width: 300px;
 border-radius: 10px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
 aspect-ratio: 4/3; /* Fixed aspect ratio */
 }
-#video { 
-width: 100%; 
-height: 100%; 
-display: block; 
+#video {
+width: 100%;
+height: 100%;
+display: block;
 object-fit: cover; /* Ensure video fills container properly */
 }
 .scan-overlay {
-position: absolute; 
-top: 50%; 
-left: 50%; 
+position: absolute;
+top: 50%;
+left: 50%;
 transform: translate(-50%, -50%);
-width: 45%; /* Even narrower for precision */
-height: 45%; /* Taller for full barcode capture */
-border: 3px solid #cc5500; 
+width: 60%; /* Increased from 45% for better detection */
+height: 60%; /* Increased from 45% for better detection */
+border: 3px solid #cc5500;
 border-radius: 8px;
 box-shadow: 0 0 0 2000px rgba(0,0,0,0.7); /* Large but finite shadow */
 transition: all 0.3s ease;
@@ -209,7 +209,7 @@ font-size: 12px; display: none;
 .book-info { flex-direction: column; align-items: center; text-align: center; }
 .book-actions { justify-content: center; }
 .camera-container { max-width: 280px; }
-.scan-overlay { width: 55%; height: 45%; } /* Narrower but taller for mobile */
+.scan-overlay { width: 65%; height: 60%; } /* Adjusted for mobile */
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
@@ -248,7 +248,6 @@ Scanning</button>
 <h3>📝 Manual ISBN Entry</h3>
 <p style="color: #ccc; font-size: 12px; margin-bottom: 10px;">Enter ISBN if scanning doesn't
 work</p>
-
 <input type="text" id="manual-isbn" class="isbn-input" placeholder="Enter ISBN..."
 maxlength="13">
 <br>
@@ -295,1569 +294,1578 @@ let eventListenerCleanup = [];
 
 // Enhanced localStorage safety wrapper
 const StorageManager = {
-    isAvailable() {
-        try {
-            const test = '__storage_test__';
-            localStorage.setItem(test, test);
-            localStorage.removeItem(test);
-            return true;
-        } catch (e) {
-            return false;
-        }
-    },
-    get(key, defaultValue = null) {
-        if (!this.isAvailable()) {
-            debugLog('localStorage not available, using memory fallback');
-            return defaultValue;
-        }
-        try {
-            const item = localStorage.getItem(key);
-            return item ? JSON.parse(item) : defaultValue;
-        } catch (error) {
-            debugLog(`localStorage get error for key ${key}: ${error.message}`);
-            return defaultValue;
-        }
-    },
-    set(key, value) {
-        if (!this.isAvailable()) {
-            debugLog('localStorage not available, changes will not persist');
-            return false;
-        }
-        try {
-            localStorage.setItem(key, JSON.stringify(value));
-            return true;
-        } catch (error) {
-            if (error.name === 'QuotaExceededError') {
-                debugLog('localStorage quota exceeded');
-                showError('Storage full. Please remove some books to continue.');
-            } else {
-                debugLog(`localStorage set error for key ${key}: ${error.message}`);
-            }
-            return false;
-        }
-    }
+isAvailable() {
+try {
+const test = '__storage_test__';
+localStorage.setItem(test, test);
+localStorage.removeItem(test);
+return true;
+} catch (e) {
+return false;
+}
+},
+get(key, defaultValue = null) {
+if (!this.isAvailable()) {
+debugLog('localStorage not available, using memory fallback');
+return defaultValue;
+}
+try {
+const item = localStorage.getItem(key);
+return item ? JSON.parse(item) : defaultValue;
+} catch (error) {
+debugLog(`localStorage get error for key ${key}: ${error.message}`);
+return defaultValue;
+}
+},
+set(key, value) {
+if (!this.isAvailable()) {
+debugLog('localStorage not available, changes will not persist');
+return false;
+}
+try {
+localStorage.setItem(key, JSON.stringify(value));
+return true;
+} catch (error) {
+if (error.name === 'QuotaExceededError') {
+debugLog('localStorage quota exceeded');
+showError('Storage full. Please remove some books to continue.');
+} else {
+debugLog(`localStorage set error for key ${key}: ${error.message}`);
+}
+return false;
+}
+}
 };
 
 // Debounce utility for input handlers
 function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
+let timeout;
+return function executedFunction(...args) {
+const later = () => {
+clearTimeout(timeout);
+func(...args);
+};
+clearTimeout(timeout);
+timeout = setTimeout(later, wait);
+};
 }
 
 // Enhanced debug logging
 function debugLog(message) {
-    if (DEBUG_MODE) {
-        console.log('BookTracker:', message);
-    }
+if (DEBUG_MODE) {
+console.log('BookTracker:', message);
+}
 }
 
 // Network status monitoring
 function updateOfflineStatus() {
-    const indicator = document.getElementById('offline-indicator');
-    if (!navigator.onLine) {
-        indicator.style.display = 'block';
-    } else {
-        indicator.style.display = 'none';
-    }
+const indicator = document.getElementById('offline-indicator');
+if (!navigator.onLine) {
+indicator.style.display = 'block';
+} else {
+indicator.style.display = 'none';
+}
 }
 
 // Check camera support
 function checkCameraSupport() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showError('Camera not supported in this browser. Please use Chrome, Firefox, or Safari.');
-        return false;
-    }
-    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-        showError('Camera requires HTTPS. Please access this app over HTTPS.');
-        return false;
-    }
-    return true;
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+showError('Camera not supported in this browser. Please use Chrome, Firefox, or Safari.');
+return false;
+}
+if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+showError('Camera requires HTTPS. Please access this app over HTTPS.');
+return false;
+}
+return true;
 }
 
 // Enhanced storage functions
 function getStoredBooks() {
-    return StorageManager.get('books', []);
+return StorageManager.get('books', []);
 }
 
 function saveBooks() {
-    const success = StorageManager.set('books', books);
-    if (!success) {
-        showError('Could not save books. Changes may be lost.');
-    }
-    return success;
+const success = StorageManager.set('books', books);
+if (!success) {
+showError('Could not save books. Changes may be lost.');
+}
+return success;
 }
 
 // Input validation
 function validateISBN(isbn) {
-    const cleaned = isbn.replace(/\D/g, '');
-    return cleaned.length >= 8 && cleaned.length <= 14;
+const cleaned = isbn.replace(/\D/g, '');
+return cleaned.length >= 8 && cleaned.length <= 14;
 }
 
-// Enhanced false positive detection
+// Enhanced false positive detection with relaxed filtering
 function isLikelyFalsePositive(isbn) {
-    // Check for repeated digits (common scanner errors)
-    if (/(.)\1{5,}/.test(isbn)) return true;
-    
-    // Check for sequential patterns
-    if (/01234|12345|23456|34567|45678|56789/.test(isbn)) return true;
-    
-    // Check for common false positive patterns
-    const falsePatterns = [
-        '00000', '11111', '22222', '33333', '44444',
-        '55555', '66666', '77777', '88888', '99999',
-        '123456', '654321', '111111', '000000'
-    ];
-    
-    for (const pattern of falsePatterns) {
-        if (isbn.includes(pattern)) return true;
-    }
-    
-    // Check if it's too short or starts with invalid prefixes
-    if (isbn.length < 8) return true;
-    if (isbn.startsWith('0000') || isbn.startsWith('1111')) return true;
-    
-    // For 8-digit codes, they're likely not ISBN-13 (more likely UPC or other)
-    // Most books use ISBN-13 (13 digits) or ISBN-10 (10 digits)
-    if (isbn.length === 8) {
-        console.log('⚠️ 8-digit code detected, likely not a book ISBN:', isbn);
-        return true;
-    }
-    
-    return false;
+// Only check for obviously invalid patterns - be more permissive
+if (/(.)\\1{7,}/.test(isbn)) return true; // Changed from 5+ to 7+ repeated digits
+
+// Check for very obvious sequential patterns only
+if (/0123456789|9876543210/.test(isbn)) return true;
+
+// Only check for very common false positive patterns
+const falsePatterns = [
+'00000000', '11111111', '22222222', '33333333', '44444444',
+'55555555', '66666666', '77777777', '88888888', '99999999'
+];
+
+for (const pattern of falsePatterns) {
+if (isbn.includes(pattern)) return true;
+}
+
+// Be more permissive with length and prefix checks
+if (isbn.length < 7) return true; // Changed from 8 to 7
+// Removed the overly strict prefix checks
+
+// Allow 8-digit codes for testing - comment out the rejection
+// if (isbn.length === 8) {
+//     console.log('⚠️ 8-digit code detected, likely not a book ISBN:', isbn);
+//     return true;
+// }
+
+return false;
 }
 
 function sanitizeInput(input) {
-    return input.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-        .replace(/[<>]/g, '');
+return input.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+.replace(/[<>]/g, '');
 }
 
 // PWA Install Logic
 window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e;
-    document.getElementById('install-banner').style.display = 'flex';
+e.preventDefault();
+deferredPrompt = e;
+document.getElementById('install-banner').style.display = 'flex';
 });
 
 // Register Service Worker with error handling
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
-            .then(registration => {
-                debugLog('SW registered successfully');
-                // Listen for updates
-                registration.addEventListener('updatefound', () => {
-                    debugLog('New service worker version available');
-                });
-            })
-            .catch(registrationError => {
-                debugLog('SW registration failed: ' + registrationError);
-            });
-    });
+window.addEventListener('load', () => {
+navigator.serviceWorker.register('./sw.js')
+.then(registration => {
+debugLog('SW registered successfully');
+// Listen for updates
+registration.addEventListener('updatefound', () => {
+debugLog('New service worker version available');
+});
+})
+.catch(registrationError => {
+debugLog('SW registration failed: ' + registrationError);
+});
+});
 }
 
 // Fixed Quagga initialization with better detection settings
 function startQuagga() {
-    console.log('🔍 startQuagga() called');
-    console.log('🔍 Quagga available:', typeof Quagga !== 'undefined');
-    console.log('🔍 quaggaInitialized:', quaggaInitialized);
-    console.log('🔍 scanningActive:', scanningActive);
+console.log('🔍 startQuagga() called');
+console.log('🔍 Quagga available:', typeof Quagga !== 'undefined');
+console.log('🔍 quaggaInitialized:', quaggaInitialized);
+console.log('🔍 scanningActive:', scanningActive);
 
-    // Check if Quagga is loaded
-    if (typeof Quagga === 'undefined') {
-        console.error('❌ Quagga is not loaded');
-        showError('Barcode scanner library failed to load. Please refresh the page.');
-        return;
-    }
-
-    // Clean up any existing handler first
-    if (quaggaDetectionHandler && typeof Quagga.offDetected === 'function') {
-        try {
-            Quagga.offDetected(quaggaDetectionHandler);
-            console.log('✅ Removed old Quagga handler');
-        } catch (e) {
-            console.error('❌ Error removing old Quagga handler:', e);
-        }
-        quaggaDetectionHandler = null;
-    }
-
-    // Prevent multiple initializations
-    if (quaggaInitialized) {
-        console.log('🔄 Quagga already initialized, restarting...');
-        try {
-            Quagga.start();
-            scanningActive = true;
-            console.log('✅ Quagga restarted successfully');
-
-            // Update UI to show active scanning
-            const status = document.querySelector('.scan-status');
-            if (status) {
-                status.textContent = '📱 Position barcode in frame';
-                status.className = 'scan-status scanning';
-            }
-
-            // Re-register the handler on the running instance
-            quaggaDetectionHandler = async (data) => {
-                console.log('🎯 Barcode detected in restarted instance:', data.codeResult.code);
-                if (!scanningActive || isProcessingBarcode) return;
-                const code = data.codeResult.code;
-                try {
-                    Quagga.stop();
-                    scanningActive = false;
-                    showScanSuccess();
-                    await handleBarcodeDetected(code);
-                } catch (error) {
-                    console.error('❌ Error handling barcode in restart:', error);
-                    isProcessingBarcode = false;
-                }
-            };
-            
-            // Use the correct method to register detection handler
-            if (typeof Quagga.onDetected === 'function') {
-                Quagga.onDetected(quaggaDetectionHandler);
-            } else if (typeof Quagga.on === 'function') {
-                Quagga.on('detected', quaggaDetectionHandler);
-            } else {
-                console.error('❌ No valid method to register Quagga detection handler');
-                showError('Scanner event system not available');
-                return;
-            }
-            
-            console.log('✅ Detection handler re-registered');
-            return;
-        } catch (error) {
-            console.error('❌ Error restarting Quagga:', error);
-            quaggaInitialized = false;
-            // fallback to full init
-        }
-    }
-
-    console.log('🚀 Starting fresh Quagga initialization...');
-    const cameraContainer = document.querySelector('#camera-container');
-    if (!cameraContainer) {
-        console.error('❌ Camera container not found');
-        showError('Camera container not found');
-        return;
-    }
-
-    console.log('✅ Camera container found, initializing Quagga...');
-
-    // Show initial scanning status
-    const status = document.querySelector('.scan-status');
-    if (status) {
-        status.textContent = '⏳ Initializing scanner...';
-        status.className = 'scan-status initializing';
-    }
-
-    try {
-        Quagga.init({
-            inputStream: {
-                name: "Live",
-                type: "LiveStream",
-                target: cameraContainer,
-                constraints: {
-                    facingMode: "environment",
-                    width: { ideal: 640, min: 480, max: 800 }, // Reduced resolution for better performance
-                    height: { ideal: 480, min: 320, max: 600 }
-                }
-            },
-            decoder: {
-                readers: [
-                    "ean_reader", 
-                    "ean_8_reader", 
-                    "code_128_reader", 
-                    "code_39_reader",
-                    "code_39_vin_reader",
-                    "codabar_reader",
-                    "upc_reader",
-                    "upc_e_reader"
-                ],
-                debug: {
-                    drawBoundingBox: DEBUG_MODE,
-                    showFrequency: DEBUG_MODE,
-                    drawScanline: DEBUG_MODE,
-                    showPattern: DEBUG_MODE
-                }
-            },
-            locate: true,
-            locator: {
-                patchSize: "medium",
-                halfSample: false, // Better accuracy
-                willReadFrequently: true // Fix canvas performance warning
-            },
-            frequency: 10, // Increased frequency for better detection
-            numOfWorkers: 2, // Use multiple workers
-            debug: {
-                drawBoundingBox: DEBUG_MODE,
-                showFrequency: DEBUG_MODE,
-                drawScanline: DEBUG_MODE,
-                showPattern: DEBUG_MODE
-            }
-        }, (err) => {
-            console.log('📡 Quagga.init callback called');
-            if (err) {
-                console.error('❌ Quagga init error:', err);
-                showError('Barcode scanner init failed: ' + err.message);
-                quaggaInitialized = false;
-                return;
-            }
-
-            console.log('✅ Quagga initialized successfully');
-            quaggaInitialized = true;
-
-            // Create detection handler with better validation
-            console.log('🎯 Creating detection handler...');
-            quaggaDetectionHandler = async (data) => {
-                console.log('🎯 Barcode detected:', data.codeResult.code);
-                console.log('🎯 Detection confidence:', data.codeResult.decodedCodes);
-
-                if (!scanningActive || isProcessingBarcode) {
-                    console.log('⏭️ Ignoring detection (not active or already processing)');
-                    return;
-                }
-
-                // Enhanced validation - check barcode quality and confidence
-                if (!data.codeResult || !data.codeResult.code) {
-                    console.log('⚠️ Invalid barcode data, ignoring');
-                    return;
-                }
-
-                // Check if we have decoded codes for confidence
-                const decodedCodes = data.codeResult.decodedCodes;
-                if (decodedCodes && decodedCodes.length > 0) {
-                    // Calculate average confidence
-                    const avgConfidence = decodedCodes.reduce((sum, code) => sum + (code.error || 0), 0) / decodedCodes.length;
-                    console.log('🎯 Average error rate:', avgConfidence);
-                    
-                    // Skip if error rate is too high (low confidence) - made more strict
-                    if (avgConfidence > 0.2) {
-                        console.log('⚠️ Low confidence detection, ignoring');
-                        return;
-                    }
-                }
-
-                const code = data.codeResult.code;
-
-                // Enhanced ISBN validation before processing
-                const cleanedCode = code.replace(/\D/g, '');
-                if (cleanedCode.length < 10 || cleanedCode.length > 14) {
-                    console.log('⚠️ Invalid barcode length for ISBN, ignoring:', code);
-                    return;
-                }
-
-                // Additional validation - check for common false positives
-                if (isLikelyFalsePositive(cleanedCode)) {
-                    console.log('⚠️ Likely false positive detected, ignoring:', code);
-                    return;
-                }
-
-                // Check for minimum barcode format requirements
-                if (!/^\d{10,14}$/.test(cleanedCode)) {
-                    console.log('⚠️ Invalid barcode format, ignoring:', code);
-                    return;
-                }
-
-                try {
-                    console.log('🛑 Stopping Quagga...');
-                    Quagga.stop();
-                    scanningActive = false;
-                    showScanSuccess();
-                    console.log('📖 Handling barcode...');
-                    await handleBarcodeDetected(code);
-                } catch (error) {
-                    console.error('❌ Error handling barcode:', error);
-                    isProcessingBarcode = false;
-                    // Restart scanning on error
-                    setTimeout(() => {
-                        if (!scanningActive && quaggaInitialized) {
-                            try {
-                                Quagga.start();
-                                scanningActive = true;
-                            } catch (restartError) {
-                                console.error('❌ Error restarting after error:', restartError);
-                            }
-                        }
-                    }, 2000);
-                }
-            };
-
-            // Use the correct method to register detection handler
-            if (typeof Quagga.onDetected === 'function') {
-                Quagga.onDetected(quaggaDetectionHandler);
-                console.log('✅ Detection handler registered using onDetected');
-            } else if (typeof Quagga.on === 'function') {
-                Quagga.on('detected', quaggaDetectionHandler);
-                console.log('✅ Detection handler registered using on');
-            } else {
-                console.error('❌ No valid method to register Quagga detection handler');
-                showError('Scanner event system not available');
-                return;
-            }
-
-            // Start scanning with delay to allow camera to focus
-            setTimeout(() => {
-                try {
-                    console.log('▶️ Starting Quagga after delay...');
-                    Quagga.start();
-                    scanningActive = true;
-                    console.log('✅ Quagga started successfully');
-
-                    // Update status to show ready for scanning
-                    if (status) {
-                        status.textContent = '📱 Position barcode in frame';
-                        status.className = 'scan-status ready';
-                    }
-                } catch (startError) {
-                    console.error('❌ Error starting Quagga:', startError);
-                    quaggaInitialized = false;
-                    showError('Failed to start barcode scanner: ' + startError.message);
-                }
-            }, 2000); // Keep longer delay for camera focus
-        });
-    } catch (initError) {
-        console.error('❌ Error calling Quagga.init:', initError);
-        showError('Failed to initialize barcode scanner: ' + initError.message);
-    }
+// Check if Quagga is loaded
+if (typeof Quagga === 'undefined') {
+console.error('❌ Quagga is not loaded');
+showError('Barcode scanner library failed to load. Please refresh the page.');
+return;
 }
 
-    // Enhanced scanning cleanup
+// Clean up any existing handler first
+if (quaggaDetectionHandler && typeof Quagga.offDetected === 'function') {
+try {
+Quagga.offDetected(quaggaDetectionHandler);
+console.log('✅ Removed old Quagga handler');
+} catch (e) {
+console.error('❌ Error removing old Quagga handler:', e);
+}
+quaggaDetectionHandler = null;
+}
+
+// Prevent multiple initializations
+if (quaggaInitialized) {
+console.log('🔄 Quagga already initialized, restarting...');
+try {
+Quagga.start();
+scanningActive = true;
+console.log('✅ Quagga restarted successfully');
+// Update UI to show active scanning
+const status = document.querySelector('.scan-status');
+if (status) {
+status.textContent = '📱 Position barcode in frame';
+status.className = 'scan-status scanning';
+}
+// Re-register the handler on the running instance
+quaggaDetectionHandler = async (data) => {
+console.log('🎯 Barcode detected in restarted instance:', data.codeResult.code);
+if (!scanningActive || isProcessingBarcode) return;
+const code = data.codeResult.code;
+try {
+Quagga.stop();
+scanningActive = false;
+showScanSuccess();
+await handleBarcodeDetected(code);
+} catch (error) {
+console.error('❌ Error handling barcode in restart:', error);
+isProcessingBarcode = false;
+}
+};
+// Use the correct method to register detection handler
+if (typeof Quagga.onDetected === 'function') {
+Quagga.onDetected(quaggaDetectionHandler);
+} else if (typeof Quagga.on === 'function') {
+Quagga.on('detected', quaggaDetectionHandler);
+} else {
+console.error('❌ No valid method to register Quagga detection handler');
+showError('Scanner event system not available');
+return;
+}
+console.log('✅ Detection handler re-registered');
+return;
+} catch (error) {
+console.error('❌ Error restarting Quagga:', error);
+quaggaInitialized = false;
+// fallback to full init
+}
+}
+
+console.log('🚀 Starting fresh Quagga initialization...');
+const cameraContainer = document.querySelector('#camera-container');
+if (!cameraContainer) {
+console.error('❌ Camera container not found');
+showError('Camera container not found');
+return;
+}
+
+console.log('✅ Camera container found, initializing Quagga...');
+
+// Show initial scanning status
+const status = document.querySelector('.scan-status');
+if (status) {
+status.textContent = '⏳ Initializing scanner...';
+status.className = 'scan-status initializing';
+}
+
+try {
+Quagga.init({
+inputStream: {
+name: "Live",
+type: "LiveStream",
+target: cameraContainer,
+constraints: {
+facingMode: "environment",
+width: { ideal: 1280, min: 640, max: 1920 }, // Increased minimum for better quality
+height: { ideal: 720, min: 480, max: 1080 }
+}
+},
+decoder: {
+readers: [
+"ean_reader",
+"ean_8_reader",
+"code_128_reader",
+"code_39_reader",
+"code_39_vin_reader",
+"codabar_reader",
+"upc_reader",      // Re-enabled for testing
+"upc_e_reader"     // Re-enabled for testing
+],
+debug: {
+drawBoundingBox: DEBUG_MODE,
+showFrequency: DEBUG_MODE,
+drawScanline: DEBUG_MODE,
+showPattern: DEBUG_MODE
+}
+},
+locate: true,
+locator: {
+patchSize: "large", // Changed from "medium" for better detection
+halfSample: false,
+willReadFrequently: true
+},
+frequency: 15, // Increased from 10 for better detection rate
+numOfWorkers: 1, // Reduced from 2 for better stability
+debug: {
+drawBoundingBox: DEBUG_MODE,
+showFrequency: DEBUG_MODE,
+drawScanline: DEBUG_MODE,
+showPattern: DEBUG_MODE
+}
+}, (err) => {
+console.log('📡 Quagga.init callback called');
+if (err) {
+console.error('❌ Quagga init error:', err);
+showError('Barcode scanner init failed: ' + err.message);
+quaggaInitialized = false;
+return;
+}
+
+console.log('✅ Quagga initialized successfully');
+quaggaInitialized = true;
+
+// Create detection handler with relaxed validation
+console.log('🎯 Creating detection handler...');
+quaggaDetectionHandler = async (data) => {
+console.log('🎯 RAW DETECTION EVENT:', {
+code: data.codeResult.code,
+format: data.codeResult.format,
+decodedCodes: data.codeResult.decodedCodes,
+box: data.codeResult.box,
+line: data.codeResult.line
+});
+
+if (!scanningActive || isProcessingBarcode) {
+console.log('⏭️ Ignoring detection (not active or already processing)');
+return;
+}
+
+// Enhanced validation - check barcode quality and confidence
+if (!data.codeResult || !data.codeResult.code) {
+console.log('⚠️ Invalid barcode data, ignoring');
+return;
+}
+
+// Check if we have decoded codes for confidence - RELAXED THRESHOLD
+const decodedCodes = data.codeResult.decodedCodes;
+if (decodedCodes && decodedCodes.length > 0) {
+// Calculate average confidence
+const avgConfidence = decodedCodes.reduce((sum, code) => sum + (code.error || 0), 0) / decodedCodes.length;
+console.log('🎯 Average error rate:', avgConfidence);
+
+// RELAXED: Skip if error rate is too high - increased from 0.2 to 0.5
+if (avgConfidence > 0.5) {
+console.log('⚠️ Low confidence detection, ignoring (error rate too high)');
+return;
+}
+}
+
+const code = data.codeResult.code;
+
+// Enhanced ISBN validation before processing - RELAXED
+const cleanedCode = code.replace(/\D/g, '');
+if (cleanedCode.length < 7 || cleanedCode.length > 14) { // Changed from 10 to 7
+console.log('⚠️ Invalid barcode length for ISBN, ignoring:', code);
+return;
+}
+
+// RELAXED: Additional validation - check for common false positives
+if (isLikelyFalsePositive(cleanedCode)) {
+console.log('⚠️ Likely false positive detected, ignoring:', code);
+return;
+}
+
+// RELAXED: Check for minimum barcode format requirements
+if (!/^\d{7,14}$/.test(cleanedCode)) { // Changed from 10 to 7
+console.log('⚠️ Invalid barcode format, ignoring:', code);
+return;
+}
+
+try {
+console.log('🛑 Stopping Quagga...');
+Quagga.stop();
+scanningActive = false;
+showScanSuccess();
+console.log('📖 Handling barcode...');
+await handleBarcodeDetected(code);
+} catch (error) {
+console.error('❌ Error handling barcode:', error);
+isProcessingBarcode = false;
+// Restart scanning on error
+setTimeout(() => {
+if (!scanningActive && quaggaInitialized) {
+try {
+Quagga.start();
+scanningActive = true;
+} catch (restartError) {
+console.error('❌ Error restarting after error:', restartError);
+}
+}
+}, 2000);
+}
+};
+
+// Use the correct method to register detection handler
+if (typeof Quagga.onDetected === 'function') {
+Quagga.onDetected(quaggaDetectionHandler);
+console.log('✅ Detection handler registered using onDetected');
+} else if (typeof Quagga.on === 'function') {
+Quagga.on('detected', quaggaDetectionHandler);
+console.log('✅ Detection handler registered using on');
+} else {
+console.error('❌ No valid method to register Quagga detection handler');
+showError('Scanner event system not available');
+return;
+}
+
+// Start scanning with delay to allow camera to focus
+setTimeout(() => {
+try {
+console.log('▶️ Starting Quagga after delay...');
+Quagga.start();
+scanningActive = true;
+console.log('✅ Quagga started successfully');
+// Update status to show ready for scanning
+if (status) {
+status.textContent = '📱 Position barcode in frame';
+status.className = 'scan-status ready';
+}
+} catch (startError) {
+console.error('❌ Error starting Quagga:', startError);
+quaggaInitialized = false;
+showError('Failed to start barcode scanner: ' + startError.message);
+}
+}, 2000);
+});
+} catch (initError) {
+console.error('❌ Error calling Quagga.init:', initError);
+showError('Failed to initialize barcode scanner: ' + initError.message);
+}
+}
+
+// Enhanced scanning cleanup
 function stopScanning() {
-   debugLog('Stopping camera...');
-   scanningActive = false;
-   isProcessingBarcode = false;
+debugLog('Stopping camera...');
+scanningActive = false;
+isProcessingBarcode = false;
 
-   // Proper Quagga cleanup with stored handler
-   if (quaggaInitialized) {
-       try {
-           Quagga.stop();
-           if (quaggaDetectionHandler) {
-               // Use the correct method to remove detection handler
-               if (typeof Quagga.offDetected === 'function') {
-                   Quagga.offDetected(quaggaDetectionHandler);
-               } else if (typeof Quagga.off === 'function') {
-                   Quagga.off('detected', quaggaDetectionHandler);
-               }
-               quaggaDetectionHandler = null;
-               debugLog('Quagga detection handler removed');
-           }
-           debugLog('Quagga stopped successfully');
-       } catch (error) {
-           debugLog('Error stopping Quagga: ' + error.message);
-       }
-   }
-   quaggaInitialized = false;
+// Proper Quagga cleanup with stored handler
+if (quaggaInitialized) {
+try {
+Quagga.stop();
+if (quaggaDetectionHandler) {
+// Use the correct method to remove detection handler
+if (typeof Quagga.offDetected === 'function') {
+Quagga.offDetected(quaggaDetectionHandler);
+} else if (typeof Quagga.off === 'function') {
+Quagga.off('detected', quaggaDetectionHandler);
+}
+quaggaDetectionHandler = null;
+debugLog('Quagga detection handler removed');
+}
+debugLog('Quagga stopped successfully');
+} catch (error) {
+debugLog('Error stopping Quagga: ' + error.message);
+}
+}
+quaggaInitialized = false;
 
-   // Stop camera stream
-   if (currentStream) {
-       try {
-           currentStream.getTracks().forEach(track => {
-               track.stop();
-               debugLog('Camera track stopped: ' + track.kind);
-           });
-           currentStream = null;
-       } catch (error) {
-           debugLog('Error stopping camera tracks: ' + error.message);
-           currentStream = null;
-       }
-   }
+// Stop camera stream
+if (currentStream) {
+try {
+currentStream.getTracks().forEach(track => {
+track.stop();
+debugLog('Camera track stopped: ' + track.kind);
+});
+currentStream = null;
+} catch (error) {
+debugLog('Error stopping camera tracks: ' + error.message);
+currentStream = null;
+}
+}
 
-   // UI cleanup
-   document.getElementById('camera-info').style.display = 'none';
-   document.getElementById('camera-container').style.display = 'none';
-   document.getElementById('stop-btn').style.display = 'none';
-   document.getElementById('scan-button').style.display = 'block';
-   document.getElementById('scan-result').style.display = 'none';
+// UI cleanup
+document.getElementById('camera-info').style.display = 'none';
+document.getElementById('camera-container').style.display = 'none';
+document.getElementById('stop-btn').style.display = 'none';
+document.getElementById('scan-button').style.display = 'block';
+document.getElementById('scan-result').style.display = 'none';
 }
 
 // Initialize app with enhanced error handling
 document.addEventListener('DOMContentLoaded', function() {
-   debugLog('App initializing...');
+debugLog('App initializing...');
 
-   // Setup offline monitoring
-   window.addEventListener('online', updateOfflineStatus);
-   window.addEventListener('offline', updateOfflineStatus);
-   updateOfflineStatus();
+// Setup offline monitoring
+window.addEventListener('online', updateOfflineStatus);
+window.addEventListener('offline', updateOfflineStatus);
+updateOfflineStatus();
 
-   if (!checkCameraSupport()) {
-       return;
-   }
+if (!checkCameraSupport()) {
+return;
+}
 
-   books = getStoredBooks();
-   renderLibrary();
+books = getStoredBooks();
+renderLibrary();
 
-   // Navigation with cleanup
-   document.addEventListener('click', function(e) {
-       if (e.target.classList.contains('nav-tab')) {
-           const newTab = e.target.getAttribute('data-tab');
-           // Clean up when switching away from scan tab
-           if (newTab !== 'scan' && scanningActive) {
-               stopScanning();
-           }
-           switchTab(newTab);
-       }
-   });
+// Navigation with cleanup
+document.addEventListener('click', function(e) {
+if (e.target.classList.contains('nav-tab')) {
+const newTab = e.target.getAttribute('data-tab');
+// Clean up when switching away from scan tab
+if (newTab !== 'scan' && scanningActive) {
+stopScanning();
+}
+switchTab(newTab);
+}
+});
 
-   // Enhanced button event listeners
-   const scanButton = document.getElementById('scan-button');
-   const stopButton = document.getElementById('stop-btn');
-   const manualLookupBtn = document.getElementById('manual-lookup-btn');
-   const manualIsbnInput = document.getElementById('manual-isbn');
+// Enhanced button event listeners
+const scanButton = document.getElementById('scan-button');
+const stopButton = document.getElementById('stop-btn');
+const manualLookupBtn = document.getElementById('manual-lookup-btn');
+const manualIsbnInput = document.getElementById('manual-isbn');
 
-   if (scanButton) {
-       scanButton.addEventListener('click', handleScanButtonClick);
-   }
+if (scanButton) {
+scanButton.addEventListener('click', handleScanButtonClick);
+}
 
-   if (stopButton) {
-       stopButton.addEventListener('click', handleStopButtonClick);
-   }
+if (stopButton) {
+stopButton.addEventListener('click', handleStopButtonClick);
+}
 
-   if (manualLookupBtn) {
-       manualLookupBtn.addEventListener('click', handleManualLookup);
-   }
+if (manualLookupBtn) {
+manualLookupBtn.addEventListener('click', handleManualLookup);
+}
 
-   if (manualIsbnInput) {
-       manualIsbnInput.addEventListener('keypress', function(e) {
-           if (e.key === 'Enter') {
-               handleManualLookup();
-           }
-       });
+if (manualIsbnInput) {
+manualIsbnInput.addEventListener('keypress', function(e) {
+if (e.key === 'Enter') {
+handleManualLookup();
+}
+});
 
-       // Enhanced input validation
-       manualIsbnInput.addEventListener('input', function(e) {
-           let value = e.target.value.replace(/[^\d\-X]/gi, '');
-           if (value.length > 13) {
-               value = value.substring(0, 13);
-           }
-           e.target.value = value;
-       });
-   }
+// Enhanced input validation
+manualIsbnInput.addEventListener('input', function(e) {
+let value = e.target.value.replace(/[^\d\-X]/gi, '');
+if (value.length > 13) {
+value = value.substring(0, 13);
+}
+e.target.value = value;
+});
+}
 
-   // PWA install buttons
-   document.getElementById('install-btn').addEventListener('click', async () => {
-       if (deferredPrompt) {
-           deferredPrompt.prompt();
-           const { outcome } = await deferredPrompt.userChoice;
-           debugLog('Install prompt result: ' + outcome);
-           deferredPrompt = null;
-           document.getElementById('install-banner').style.display = 'none';
-       }
-   });
+// PWA install buttons
+document.getElementById('install-btn').addEventListener('click', async () => {
+if (deferredPrompt) {
+deferredPrompt.prompt();
+const { outcome } = await deferredPrompt.userChoice;
+debugLog('Install prompt result: ' + outcome);
+deferredPrompt = null;
+document.getElementById('install-banner').style.display = 'none';
+}
+});
 
-   document.getElementById('dismiss-install').addEventListener('click', () => {
-       document.getElementById('install-banner').style.display = 'none';
-   });
+document.getElementById('dismiss-install').addEventListener('click', () => {
+document.getElementById('install-banner').style.display = 'none';
+});
 
-   debugLog('App initialized successfully');
+debugLog('App initialized successfully');
 });
 
 // Enhanced button handlers
 function handleScanButtonClick(e) {
-   e.preventDefault();
-   console.log('🖱️ Scan button clicked');
-   if (!checkCameraSupport()) {
-       console.log('❌ Camera support check failed');
-       return;
-   }
+e.preventDefault();
+console.log('🖱️ Scan button clicked');
+if (!checkCameraSupport()) {
+console.log('❌ Camera support check failed');
+return;
+}
 
-   if (!navigator.onLine) {
-       console.log('❌ No internet connection');
-       showError('Internet connection required for book lookup');
-       return;
-   }
+if (!navigator.onLine) {
+console.log('❌ No internet connection');
+showError('Internet connection required for book lookup');
+return;
+}
 
-   console.log('✅ Starting scan process...');
-   document.getElementById('camera-info').style.display = 'block';
-   document.getElementById('camera-info').innerHTML = '<p>🔄 Initializing camera...</p>';
+console.log('✅ Starting scan process...');
+document.getElementById('camera-info').style.display = 'block';
+document.getElementById('camera-info').innerHTML = '<p>🔄 Initializing camera...</p>';
 
-   setTimeout(() => {
-       console.log('⏰ Camera timeout reached, calling startScanning()');
-       startScanning();
-   }, 500);
+setTimeout(() => {
+console.log('⏰ Camera timeout reached, calling startScanning()');
+startScanning();
+}, 500);
 }
 
 function handleStopButtonClick(e) {
-   e.preventDefault();
-   debugLog('Stop button clicked');
-   stopScanning();
+e.preventDefault();
+debugLog('Stop button clicked');
+stopScanning();
 }
 
 // Enhanced manual lookup with validation
 async function handleManualLookup() {
-   const isbnInput = document.getElementById('manual-isbn');
-   const rawIsbn = sanitizeInput(isbnInput.value.trim());
+const isbnInput = document.getElementById('manual-isbn');
+const rawIsbn = sanitizeInput(isbnInput.value.trim());
 
-   if (!rawIsbn) {
-       showError('Please enter an ISBN number');
-       return;
-   }
+if (!rawIsbn) {
+showError('Please enter an ISBN number');
+return;
+}
 
-   const isbn = rawIsbn.replace(/\D/g, '');
+const isbn = rawIsbn.replace(/\D/g, '');
 
-   if (!validateISBN(isbn)) {
-       showError('Please enter a valid ISBN (8-14 digits)');
-       return;
-   }
+if (!validateISBN(isbn)) {
+showError('Please enter a valid ISBN (8-14 digits)');
+return;
+}
 
-   if (!navigator.onLine) {
-       showError('Internet connection required for book lookup');
-       return;
-   }
+if (!navigator.onLine) {
+showError('Internet connection required for book lookup');
+return;
+}
 
-   debugLog('Manual ISBN lookup: ' + isbn);
+debugLog('Manual ISBN lookup: ' + isbn);
 
-   document.getElementById('scan-result').style.display = 'block';
-   document.getElementById('scan-result').innerHTML = `
-       <div class="loading">
-           <div class="spinner"></div>
-           <p>Looking up book information...</p>
-           <div class="scanned-info">Manual lookup: ${isbn}</div>
-       </div>
-   `;
+document.getElementById('scan-result').style.display = 'block';
+document.getElementById('scan-result').innerHTML = `
+<div class="loading">
+<div class="spinner"></div>
+<p>Looking up book information...</p>
+<div class="scanned-info">Manual lookup: ${isbn}</div>
+</div>
+`;
 
-   try {
-       await lookupBookByISBN(isbn, 'manual');
-   } catch (error) {
-       debugLog('Manual lookup error: ' + error.message);
-       showError('Error looking up book. Check internet connection.');
-       document.getElementById('scan-result').style.display = 'none';
-   }
+try {
+await lookupBookByISBN(isbn, 'manual');
+} catch (error) {
+debugLog('Manual lookup error: ' + error.message);
+showError('Error looking up book. Check internet connection.');
+document.getElementById('scan-result').style.display = 'none';
+}
 }
 
 function switchTab(tabName) {
-   // Clean up event listeners when switching tabs
-   if (tabName !== 'library') {
-       cleanupEventListeners();
-   }
+// Clean up event listeners when switching tabs
+if (tabName !== 'library') {
+cleanupEventListeners();
+}
 
-   document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
-   document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
 
-   document.querySelectorAll('.tab-content').forEach(content =>
-       content.classList.remove('active'));
-   document.getElementById(tabName + '-tab').classList.add('active');
+document.querySelectorAll('.tab-content').forEach(content =>
+content.classList.remove('active'));
+document.getElementById(tabName + '-tab').classList.add('active');
 
-   if (tabName === 'library') renderLibrary();
+if (tabName === 'library') renderLibrary();
 }
 
 // Enhanced camera startup with better error handling
 async function startScanning() {
-   console.log('📹 Starting camera access...');
-   try {
-       // Check if camera is supported first
-       if (!navigator.mediaDevices?.getUserMedia) {
-           throw new Error('Camera API not supported in this browser');
-       }
+console.log('📹 Starting camera access...');
+try {
+// Check if camera is supported first
+if (!navigator.mediaDevices?.getUserMedia) {
+throw new Error('Camera API not supported in this browser');
+}
 
-       document.getElementById('camera-info').innerHTML = '<p>🔄 Requesting camera access...</p>';
+document.getElementById('camera-info').innerHTML = '<p>🔄 Requesting camera access...</p>';
 
-       const stream = await navigator.mediaDevices.getUserMedia({
-           video: {
-               facingMode: { ideal: 'environment' },
-               width: { ideal: 1280, max: 1920 },
-               height: { ideal: 720, max: 1080 }
-           }
-       });
+const stream = await navigator.mediaDevices.getUserMedia({
+video: {
+facingMode: { ideal: 'environment' },
+width: { ideal: 1280, max: 1920 },
+height: { ideal: 720, max: 1080 }
+}
+});
 
-       currentStream = stream;
-       console.log('✅ Camera access granted successfully');
+currentStream = stream;
+console.log('✅ Camera access granted successfully');
 
-       const video = document.getElementById('video');
-       if (!video) {
-           throw new Error('Video element not found');
-       }
+const video = document.getElementById('video');
+if (!video) {
+throw new Error('Video element not found');
+}
 
-       video.srcObject = currentStream;
+video.srcObject = currentStream;
 
-       // Enhanced video loading with better error handling
-       await new Promise((resolve, reject) => {
-           const timeout = setTimeout(() => {
-               reject(new Error('Video load timeout'));
-           }, 15000); // Increased timeout
+// Enhanced video loading with better error handling
+await new Promise((resolve, reject) => {
+const timeout = setTimeout(() => {
+reject(new Error('Video load timeout'));
+}, 15000); // Increased timeout
 
-           const onCanPlay = () => {
-               clearTimeout(timeout);
-               video.removeEventListener('canplay', onCanPlay);
-               video.removeEventListener('loadedmetadata', onCanPlay);
-               video.removeEventListener('error', onError);
-               console.log('✅ Video can play');
+const onCanPlay = () => {
+clearTimeout(timeout);
+video.removeEventListener('canplay', onCanPlay);
+video.removeEventListener('loadedmetadata', onCanPlay);
+video.removeEventListener('error', onError);
+console.log('✅ Video can play');
 
-               // Additional check - wait for actual video dimensions
-               if (video.videoWidth > 0 && video.videoHeight > 0) {
-                   resolve();
-               } else {
-                   // Wait a bit more for video to be fully ready
-                   setTimeout(() => {
-                       if (video.videoWidth > 0 && video.videoHeight > 0) {
-                           resolve();
-                       } else {
-                           reject(new Error('Video dimensions not available'));
-                       }
-                   }, 1000);
-               }
-           };
+// Additional check - wait for actual video dimensions
+if (video.videoWidth > 0 && video.videoHeight > 0) {
+resolve();
+} else {
+// Wait a bit more for video to be fully ready
+setTimeout(() => {
+if (video.videoWidth > 0 && video.videoHeight > 0) {
+resolve();
+} else {
+reject(new Error('Video dimensions not available'));
+}
+}, 1000);
+}
+};
 
-           const onError = (e) => {
-               clearTimeout(timeout);
-               video.removeEventListener('canplay', onCanPlay);
-               video.removeEventListener('loadedmetadata', onCanPlay);
-               video.removeEventListener('error', onError);
-               reject(new Error('Video load error: ' + (e.message || 'Unknown video error')));
-           };
+const onError = (e) => {
+clearTimeout(timeout);
+video.removeEventListener('canplay', onCanPlay);
+video.removeEventListener('loadedmetadata', onCanPlay);
+video.removeEventListener('error', onError);
+reject(new Error('Video load error: ' + (e.message || 'Unknown video error')));
+};
 
-           video.addEventListener('canplay', onCanPlay);
-           video.addEventListener('loadedmetadata', onCanPlay); // Additional event
-           video.addEventListener('error', onError);
-       });
+video.addEventListener('canplay', onCanPlay);
+video.addEventListener('loadedmetadata', onCanPlay); // Additional event
+video.addEventListener('error', onError);
+});
 
-       document.getElementById('camera-info').style.display = 'none';
-       document.getElementById('camera-container').style.display = 'block';
-       document.getElementById('stop-btn').style.display = 'block';
-       document.getElementById('scan-button').style.display = 'none';
+document.getElementById('camera-info').style.display = 'none';
+document.getElementById('camera-container').style.display = 'block';
+document.getElementById('stop-btn').style.display = 'block';
+document.getElementById('scan-button').style.display = 'none';
 
-       // Start Quagga after camera is ready with increased delay
-       setTimeout(() => {
-           console.log('⏰ Quagga timeout reached, calling startQuagga()');
-           startQuagga();
-       }, 2000); // Increased from 1000ms to 2000ms
+// Start Quagga after camera is ready with increased delay
+setTimeout(() => {
+console.log('⏰ Quagga timeout reached, calling startQuagga()');
+startQuagga();
+}, 2000); // Increased from 1000ms to 2000ms
 
-   } catch (error) {
-       console.error('📹 Camera error occurred:', error.name, '-', error.message);
-       console.error('📹 Full camera error:', error);
-       document.getElementById('camera-info').style.display = 'none';
+} catch (error) {
+console.error('📹 Camera error occurred:', error.name, '-', error.message);
+console.error('📹 Full camera error:', error);
 
-       // Enhanced error messages
-       const errorMessages = {
-           NotAllowedError: '❌ Camera permission denied. Please allow camera access and try again.',
-           NotFoundError: '❌ No camera found on this device.',
-           NotSupportedError: '❌ Camera not supported on this device.',
-           NotReadableError: '❌ Camera is being used by another application.',
-           OverconstrainedError: '❌ Camera constraints could not be satisfied.',
-           SecurityError: '❌ Camera access blocked by security policy. Please use HTTPS.',
-           AbortError: '❌ Camera access was aborted.',
-           TypeError: '❌ Network error occurred while accessing camera.'
-       };
+document.getElementById('camera-info').style.display = 'none';
 
-       const message = errorMessages[error.name] || `❌ Camera error: ${error.message}. Try refreshing the page.`;
-       showError(message);
+// Enhanced error messages
+const errorMessages = {
+NotAllowedError: '❌ Camera permission denied. Please allow camera access and try again.',
+NotFoundError: '❌ No camera found on this device.',
+NotSupportedError: '❌ Camera not supported on this device.',
+NotReadableError: '❌ Camera is being used by another application.',
+OverconstrainedError: '❌ Camera constraints could not be satisfied.',
+SecurityError: '❌ Camera access blocked by security policy. Please use HTTPS.',
+AbortError: '❌ Camera access was aborted.',
+TypeError: '❌ Network error occurred while accessing camera.'
+};
 
-       // Don't let this error bubble up to the global handler
-       return; // Important: return here instead of throwing
-   }
+const message = errorMessages[error.name] || `❌ Camera error: ${error.message}. Try refreshing the page.`;
+showError(message);
+
+// Don't let this error bubble up to the global handler
+return; // Important: return here instead of throwing
+}
 }
 
 // Enhanced scan success feedback
 function showScanSuccess() {
-   const overlay = document.querySelector('.scan-overlay');
-   const status = document.querySelector('.scan-status');
+const overlay = document.querySelector('.scan-overlay');
+const status = document.querySelector('.scan-status');
 
-   if (overlay) {
-       overlay.style.borderColor = '#00ff00';
-       overlay.style.borderWidth = '4px';
-       overlay.style.boxShadow = '0 0 30px #00ff00, 0 0 0 9999px rgba(0,255,0,0.1)';
-   }
+if (overlay) {
+overlay.style.borderColor = '#00ff00';
+overlay.style.borderWidth = '4px';
+overlay.style.boxShadow = '0 0 30px #00ff00, 0 0 0 9999px rgba(0,255,0,0.1)';
+}
 
-   if (status) {
-       status.textContent = '✅ Barcode Found!';
-       status.style.background = 'rgba(0, 255, 0, 0.9)';
-   }
+if (status) {
+status.textContent = '✅ Barcode Found!';
+status.style.background = 'rgba(0, 255, 0, 0.9)';
+}
 
-   setTimeout(() => {
-       if (overlay) {
-           overlay.style.borderColor = '#cc5500';
-           overlay.style.borderWidth = '2px';
-           overlay.style.boxShadow = '0 0 0 9999px rgba(0,0,0,0.7)';
-       }
-       if (status) {
-           status.textContent = '🔍 Point camera at barcode';
-           status.style.background = 'rgba(0, 0, 0, 0.8)';
-       }
-   }, 2000);
+setTimeout(() => {
+if (overlay) {
+overlay.style.borderColor = '#cc5500';
+overlay.style.borderWidth = '2px';
+overlay.style.boxShadow = '0 0 0 9999px rgba(0,0,0,0.7)';
+}
+if (status) {
+status.textContent = '🔍 Point camera at barcode';
+status.style.background = 'rgba(0, 0, 0, 0.8)';
+}
+}, 2000);
 
-   // Enhanced feedback
-   if (navigator.vibrate) {
-       navigator.vibrate([200, 100, 200]);
-   }
+// Enhanced feedback
+if (navigator.vibrate) {
+navigator.vibrate([200, 100, 200]);
+}
 
-   // Enhanced audio feedback with error handling
-   try {
-       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-       const oscillator = audioContext.createOscillator();
-       const gainNode = audioContext.createGain();
+// Enhanced audio feedback with error handling
+try {
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+const oscillator = audioContext.createOscillator();
+const gainNode = audioContext.createGain();
 
-       oscillator.connect(gainNode);
-       gainNode.connect(audioContext.destination);
+oscillator.connect(gainNode);
+gainNode.connect(audioContext.destination);
 
-       oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-       oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
 
-       gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-       gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
-
-       oscillator.start(audioContext.currentTime);
-       oscillator.stop(audioContext.currentTime + 0.2);
-   } catch (error) {
-       debugLog('Audio feedback failed: ' + error.message);
-   }
+oscillator.start(audioContext.currentTime);
+oscillator.stop(audioContext.currentTime + 0.2);
+} catch (error) {
+debugLog('Audio feedback failed: ' + error.message);
+}
 }
 
 // Enhanced barcode handling with race condition prevention
 async function handleBarcodeDetected(barcode) {
-   // Prevent race conditions
-   if (isProcessingBarcode) {
-       debugLog('Already processing a barcode, ignoring duplicate');
-       return;
-   }
-   isProcessingBarcode = true;
+// Prevent race conditions
+if (isProcessingBarcode) {
+debugLog('Already processing a barcode, ignoring duplicate');
+return;
+}
 
-   try {
-       const cleanedISBN = barcode.replace(/\D/g, '');
+isProcessingBarcode = true;
 
-       // Enhanced duplicate detection
-       if (lastScannedBarcode === barcode && Date.now() - lastScanTime < 3000) {
-           debugLog('Duplicate barcode detected within 3 seconds, ignoring');
-           return;
-       }
+try {
+const cleanedISBN = barcode.replace(/\D/g, '');
 
-       lastScannedBarcode = barcode;
-       lastScanTime = Date.now();
+// Enhanced duplicate detection
+if (lastScannedBarcode === barcode && Date.now() - lastScanTime < 3000) {
+debugLog('Duplicate barcode detected within 3 seconds, ignoring');
+return;
+}
 
-       debugLog('Processing barcode: ' + barcode);
-       console.log('✅ PROCESSING ISBN:', cleanedISBN);
+lastScannedBarcode = barcode;
+lastScanTime = Date.now();
 
-       // Enhanced ISBN validation
-       if (!validateISBN(cleanedISBN)) {
-           showError('Invalid barcode format. Please try scanning again or enter ISBN manually.');
-           return;
-       }
+debugLog('Processing barcode: ' + barcode);
+console.log('✅ PROCESSING ISBN:', cleanedISBN);
 
-       // Additional validation for common false positives
-       if (isLikelyFalsePositive(cleanedISBN)) {
-           showError('Invalid ISBN detected. Please position the barcode more precisely in the scanning area.');
-           setTimeout(() => {
-               if (!scanningActive && quaggaInitialized) {
-                   try {
-                       Quagga.start();
-                       scanningActive = true;
-                   } catch (error) {
-                       debugLog('Error restarting after false positive: ' + error.message);
-                   }
-               }
-           }, 2000);
-           return;
-       }
+// Enhanced ISBN validation
+if (!validateISBN(cleanedISBN)) {
+showError('Invalid barcode format. Please try scanning again or enter ISBN manually.');
+return;
+}
 
-       document.getElementById('scan-result').style.display = 'block';
-       document.getElementById('scan-result').innerHTML = `
-           <div class="loading">
-               <div class="spinner"></div>
-               <p>Looking up book information...</p>
-               <div class="scanned-info">
-                   <strong>Scanned:</strong> ${barcode}<br>
-                   <strong>ISBN:</strong> ${cleanedISBN}<br>
-                   <strong>Length:</strong> ${cleanedISBN.length} digits
-               </div>
-           </div>
-       `;
+// Additional validation for common false positives - RELAXED
+if (isLikelyFalsePositive(cleanedISBN)) {
+showError('Invalid ISBN detected. Please position the barcode more precisely in the scanning area.');
+setTimeout(() => {
+if (!scanningActive && quaggaInitialized) {
+try {
+Quagga.start();
+scanningActive = true;
+} catch (error) {
+debugLog('Error restarting after false positive: ' + error.message);
+}
+}
+}, 2000);
+return;
+}
 
-       await lookupBookByISBN(cleanedISBN, 'scanned', barcode);
+document.getElementById('scan-result').style.display = 'block';
+document.getElementById('scan-result').innerHTML = `
+<div class="loading">
+<div class="spinner"></div>
+<p>Looking up book information...</p>
+<div class="scanned-info">
+<strong>Scanned:</strong> ${barcode}<br>
+<strong>ISBN:</strong> ${cleanedISBN}<br>
+<strong>Length:</strong> ${cleanedISBN.length} digits
+</div>
+</div>
+`;
 
-   } catch (error) {
-       debugLog('Book lookup error: ' + error.message);
-       showError('Error looking up book. Check internet connection.');
-       setTimeout(() => {
-           document.getElementById('scan-result').style.display = 'none';
-       }, 3000);
-   } finally {
-       isProcessingBarcode = false;
-   }
+await lookupBookByISBN(cleanedISBN, 'scanned', barcode);
+
+} catch (error) {
+debugLog('Book lookup error: ' + error.message);
+showError('Error looking up book. Check internet connection.');
+setTimeout(() => {
+document.getElementById('scan-result').style.display = 'none';
+}, 3000);
+} finally {
+isProcessingBarcode = false;
+}
 }
 
 // Enhanced book lookup with timeout and retry logic
 async function lookupBookByISBN(isbn, source, originalBarcode = null) {
-   debugLog(`Looking up ISBN: ${isbn}`);
-   console.log('🔍 API LOOKUP - ISBN:', isbn, 'Source:', source, 'Original:', originalBarcode);
+debugLog(`Looking up ISBN: ${isbn}`);
+console.log('🔍 API LOOKUP - ISBN:', isbn, 'Source:', source, 'Original:', originalBarcode);
 
-   let bookData = null;
-   const sources = [
-       { name: 'Google Books', func: fetchBookFromGoogle },
-       { name: 'OpenLibrary', func: fetchBookFromOpenLibrary },
-       { name: 'ISBN DB', func: fetchBookFromISBNDB },
-       { name: 'WorldCat', func: fetchBookFromWorldCat }
-   ];
+let bookData = null;
 
-   for (const sourceInfo of sources) {
-       if (!bookData && navigator.onLine) {
-           debugLog(`Trying ${sourceInfo.name}...`);
-           try {
-               bookData = await sourceInfo.func(isbn);
-               if (bookData) {
-                   debugLog(`✅ Found book in ${sourceInfo.name}`);
-                   bookData.source = sourceInfo.name;
-                   break;
-               }
-           } catch (error) {
-               debugLog(`❌ ${sourceInfo.name} failed: ${error.message}`);
-               // Show specific error for network issues
-               if (error.message.includes('timeout') || error.message.includes('Network')) {
-                   showError(`${sourceInfo.name} is slow to respond. Trying alternate source...`);
-               }
-           }
-       }
-   }
+const sources = [
+{ name: 'Google Books', func: fetchBookFromGoogle },
+{ name: 'OpenLibrary', func: fetchBookFromOpenLibrary },
+{ name: 'ISBN DB', func: fetchBookFromISBNDB },
+{ name: 'WorldCat', func: fetchBookFromWorldCat }
+];
 
-   if (bookData) {
-       bookData.scanInfo = {
-           source: source,
-           originalBarcode: originalBarcode,
-           cleanedISBN: isbn,
-           timestamp: new Date().toISOString(),
-           foundIn: bookData.source
-       };
-       displayBookPreview(bookData);
-   } else {
-       const errorMsg = !navigator.onLine
-           ? 'No internet connection. Please check your network and try again.'
-           : source === 'manual'
-           ? `No book found for ISBN: ${isbn}. This might be a region-specific edition or the ISBN might not be in our databases.`
-           : 'Book not found in any database. Try manual entry or a different barcode.';
+for (const sourceInfo of sources) {
+if (!bookData && navigator.onLine) {
+debugLog(`Trying ${sourceInfo.name}...`);
+try {
+bookData = await sourceInfo.func(isbn);
+if (bookData) {
+debugLog(`✅ Found book in ${sourceInfo.name}`);
+bookData.source = sourceInfo.name;
+break;
+}
+} catch (error) {
+debugLog(`❌ ${sourceInfo.name} failed: ${error.message}`);
+// Show specific error for network issues
+if (error.message.includes('timeout') || error.message.includes('Network')) {
+showError(`${sourceInfo.name} is slow to respond. Trying alternate source...`);
+}
+}
+}
+}
 
-       showError(errorMsg);
+if (bookData) {
+bookData.scanInfo = {
+source: source,
+originalBarcode: originalBarcode,
+cleanedISBN: isbn,
+timestamp: new Date().toISOString(),
+foundIn: bookData.source
+};
+displayBookPreview(bookData);
+} else {
+const errorMsg = !navigator.onLine
+? 'No internet connection. Please check your network and try again.'
+: source === 'manual'
+? `No book found for ISBN: ${isbn}. This might be a region-specific edition or the ISBN might not be in our databases.`
+: 'Book not found in any database. Try manual entry or a different barcode.';
 
-       if (source === 'scanned') {
-           setTimeout(() => {
-               document.getElementById('scan-result').style.display = 'none';
-           }, 4000);
-       } else {
-           document.getElementById('scan-result').style.display = 'none';
-       }
-   }
+showError(errorMsg);
+
+if (source === 'scanned') {
+setTimeout(() => {
+document.getElementById('scan-result').style.display = 'none';
+}, 4000);
+} else {
+document.getElementById('scan-result').style.display = 'none';
+}
+}
 }
 
 // Enhanced Google Books API with timeout and error handling
 async function fetchBookFromGoogle(isbn) {
-   const controller = new AbortController();
- const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-  try {
-      const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`;
-      console.log('📡 Google Books API call:', url);
+try {
+const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`;
+console.log('📡 Google Books API call:', url);
 
-      const response = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-              'Accept': 'application/json',
-          }
-      });
+const response = await fetch(url, {
+signal: controller.signal,
+headers: {
+'Accept': 'application/json',
+}
+});
 
-      clearTimeout(timeoutId);
+clearTimeout(timeoutId);
 
-      if (!response.ok) {
-          throw new Error(`Google Books API error: ${response.status} ${response.statusText}`);
-      }
+if (!response.ok) {
+throw new Error(`Google Books API error: ${response.status} ${response.statusText}`);
+}
 
-      const data = await response.json();
-      console.log('📡 Google Books Response:', data);
+const data = await response.json();
+console.log('📡 Google Books Response:', data);
 
-      if (data.items && data.items.length > 0) {
-          const book = data.items[0].volumeInfo;
-          const result = {
-              isbn: isbn,
-              title: sanitizeInput(book.title || 'Unknown Title'),
-              authors: book.authors ? book.authors.map(a => sanitizeInput(a)) : ['Unknown Author'],
-              pageCount: book.pageCount || 0,
-              coverUrl: book.imageLinks?.thumbnail?.replace('http:', 'https:') || '',
-              publishedDate: sanitizeInput(book.publishedDate || 'Unknown')
-          };
-          console.log('📚 Google Books Result:', result);
-          return result;
-      }
-      return null;
-  } catch (error) {
-      clearTimeout(timeoutId);
-      if (error.name === 'AbortError') {
-          throw new Error('Request timeout - please check your internet connection');
-      } else if (error.name === 'TypeError') {
-          throw new Error('Network error - please check your internet connection');
-      } else {
-          throw new Error(`Google Books lookup failed: ${error.message}`);
-      }
-  }
+if (data.items && data.items.length > 0) {
+const book = data.items[0].volumeInfo;
+const result = {
+isbn: isbn,
+title: sanitizeInput(book.title || 'Unknown Title'),
+authors: book.authors ? book.authors.map(a => sanitizeInput(a)) : ['Unknown Author'],
+pageCount: book.pageCount || 0,
+coverUrl: book.imageLinks?.thumbnail?.replace('http:', 'https:') || '',
+publishedDate: sanitizeInput(book.publishedDate || 'Unknown')
+};
+
+console.log('📚 Google Books Result:', result);
+return result;
+}
+
+return null;
+
+} catch (error) {
+clearTimeout(timeoutId);
+if (error.name === 'AbortError') {
+throw new Error('Request timeout - please check your internet connection');
+} else if (error.name === 'TypeError') {
+throw new Error('Network error - please check your internet connection');
+} else {
+throw new Error(`Google Books lookup failed: ${error.message}`);
+}
+}
 }
 
 // Enhanced OpenLibrary API with timeout and error handling
 async function fetchBookFromOpenLibrary(isbn) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout (OpenLibrary is slower)
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout (OpenLibrary is slower)
 
-  try {
-      const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`;
-      console.log('📡 OpenLibrary API call:', url);
+try {
+const url = `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`;
+console.log('📡 OpenLibrary API call:', url);
 
-      const response = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-              'Accept': 'application/json',
-          }
-      });
+const response = await fetch(url, {
+signal: controller.signal,
+headers: {
+'Accept': 'application/json',
+}
+});
 
-      clearTimeout(timeoutId);
+clearTimeout(timeoutId);
 
-      if (!response.ok) {
-          throw new Error(`OpenLibrary API error: ${response.status} ${response.statusText}`);
-      }
+if (!response.ok) {
+throw new Error(`OpenLibrary API error: ${response.status} ${response.statusText}`);
+}
 
-      const data = await response.json();
-      console.log('📡 OpenLibrary Response:', data);
+const data = await response.json();
+console.log('📡 OpenLibrary Response:', data);
 
-      const bookKey = `ISBN:${isbn}`;
-      if (data[bookKey]) {
-          const book = data[bookKey];
-          const result = {
-              isbn: isbn,
-              title: sanitizeInput(book.title || 'Unknown Title'),
-              authors: book.authors ? book.authors.map(a => sanitizeInput(a.name)) : ['Unknown Author'],
-              pageCount: book.number_of_pages || 0,
-              coverUrl: book.cover?.medium || '',
-              publishedDate: sanitizeInput(book.publish_date || 'Unknown')
-          };
-          console.log('📚 OpenLibrary Result:', result);
-          return result;
-      }
-      return null;
-  } catch (error) {
-      clearTimeout(timeoutId);
-      if (error.name === 'AbortError') {
-          throw new Error('Request timeout - OpenLibrary is slow, please try again');
-      } else if (error.name === 'TypeError') {
-          throw new Error('Network error - please check your internet connection');
-      } else {
-          throw new Error(`OpenLibrary lookup failed: ${error.message}`);
-      }
-  }
+const bookKey = `ISBN:${isbn}`;
+if (data[bookKey]) {
+const book = data[bookKey];
+const result = {
+isbn: isbn,
+title: sanitizeInput(book.title || 'Unknown Title'),
+authors: book.authors ? book.authors.map(a => sanitizeInput(a.name)) : ['Unknown Author'],
+pageCount: book.number_of_pages || 0,
+coverUrl: book.cover?.medium || '',
+publishedDate: sanitizeInput(book.publish_date || 'Unknown')
+};
+
+console.log('📚 OpenLibrary Result:', result);
+return result;
+}
+
+return null;
+
+} catch (error) {
+clearTimeout(timeoutId);
+if (error.name === 'AbortError') {
+throw new Error('Request timeout - OpenLibrary is slow, please try again');
+} else if (error.name === 'TypeError') {
+throw new Error('Network error - please check your internet connection');
+} else {
+throw new Error(`OpenLibrary lookup failed: ${error.message}`);
+}
+}
 }
 
 // ISBN-DB API (backup source 1)
 async function fetchBookFromISBNDB(isbn) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-  try {
-      // Using a public ISBN lookup service
-      const url = `https://api.isbn.cloud/isbn/${isbn}`;
-      console.log('📡 ISBN-DB API call:', url);
+try {
+// Using a public ISBN lookup service
+const url = `https://api.isbn.cloud/isbn/${isbn}`;
+console.log('📡 ISBN-DB API call:', url);
 
-      const response = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-              'Accept': 'application/json',
-          }
-      });
+const response = await fetch(url, {
+signal: controller.signal,
+headers: {
+'Accept': 'application/json',
+}
+});
 
-      clearTimeout(timeoutId);
+clearTimeout(timeoutId);
 
-      if (!response.ok) {
-          throw new Error(`ISBN-DB API error: ${response.status}`);
-      }
+if (!response.ok) {
+throw new Error(`ISBN-DB API error: ${response.status}`);
+}
 
-      const data = await response.json();
-      console.log('📡 ISBN-DB Response:', data);
+const data = await response.json();
+console.log('📡 ISBN-DB Response:', data);
 
-      if (data && data.title) {
-          const result = {
-              isbn: isbn,
-              title: sanitizeInput(data.title || 'Unknown Title'),
-              authors: data.authors ? [sanitizeInput(data.authors)] : ['Unknown Author'],
-              pageCount: data.pages || 0,
-              coverUrl: data.image || '',
-              publishedDate: sanitizeInput(data.year || 'Unknown')
-          };
-          console.log('📚 ISBN-DB Result:', result);
-          return result;
-      }
-      return null;
-  } catch (error) {
-      clearTimeout(timeoutId);
-      if (error.name === 'AbortError') {
-          throw new Error('Request timeout - ISBN-DB service unavailable');
-      } else {
-          throw new Error(`ISBN-DB lookup failed: ${error.message}`);
-      }
-  }
+if (data && data.title) {
+const result = {
+isbn: isbn,
+title: sanitizeInput(data.title || 'Unknown Title'),
+authors: data.authors ? [sanitizeInput(data.authors)] : ['Unknown Author'],
+pageCount: data.pages || 0,
+coverUrl: data.image || '',
+publishedDate: sanitizeInput(data.year || 'Unknown')
+};
+
+console.log('📚 ISBN-DB Result:', result);
+return result;
+}
+
+return null;
+
+} catch (error) {
+clearTimeout(timeoutId);
+if (error.name === 'AbortError') {
+throw new Error('Request timeout - ISBN-DB service unavailable');
+} else {
+throw new Error(`ISBN-DB lookup failed: ${error.message}`);
+}
+}
 }
 
 // WorldCat API (backup source 2)
 async function fetchBookFromWorldCat(isbn) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-  try {
-      // Using WorldCat's xISBN service
-      const url = `https://www.worldcat.org/webservices/catalog/content/libraries/isbn/${isbn}?format=json`;
-      console.log('📡 WorldCat API call:', url);
+try {
+// Using WorldCat's xISBN service
+const url = `https://www.worldcat.org/webservices/catalog/content/libraries/isbn/${isbn}?format=json`;
+console.log('📡 WorldCat API call:', url);
 
-      const response = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-              'Accept': 'application/json',
-          }
-      });
+const response = await fetch(url, {
+signal: controller.signal,
+headers: {
+'Accept': 'application/json',
+}
+});
 
-      clearTimeout(timeoutId);
+clearTimeout(timeoutId);
 
-      if (!response.ok) {
-          throw new Error(`WorldCat API error: ${response.status}`);
-      }
+if (!response.ok) {
+throw new Error(`WorldCat API error: ${response.status}`);
+}
 
-      const data = await response.json();
-      console.log('📡 WorldCat Response:', data);
+const data = await response.json();
+console.log('📡 WorldCat Response:', data);
 
-      if (data && data.title) {
-          const result = {
-              isbn: isbn,
-              title: sanitizeInput(data.title || 'Unknown Title'),
-              authors: data.author ? [sanitizeInput(data.author)] : ['Unknown Author'],
-              pageCount: 0, // WorldCat doesn't always provide page count
-              coverUrl: '', // WorldCat doesn't provide cover images
-              publishedDate: sanitizeInput(data.year || 'Unknown')
-          };
-          console.log('📚 WorldCat Result:', result);
-          return result;
-      }
-      return null;
-  } catch (error) {
-      clearTimeout(timeoutId);
-      if (error.name === 'AbortError') {
-          throw new Error('Request timeout - WorldCat service unavailable');
-      } else {
-          throw new Error(`WorldCat lookup failed: ${error.message}`);
-      }
-  }
+if (data && data.title) {
+const result = {
+isbn: isbn,
+title: sanitizeInput(data.title || 'Unknown Title'),
+authors: data.author ? [sanitizeInput(data.author)] : ['Unknown Author'],
+pageCount: 0, // WorldCat doesn't always provide page count
+coverUrl: '', // WorldCat doesn't provide cover images
+publishedDate: sanitizeInput(data.year || 'Unknown')
+};
+
+console.log('📚 WorldCat Result:', result);
+return result;
+}
+
+return null;
+
+} catch (error) {
+clearTimeout(timeoutId);
+if (error.name === 'AbortError') {
+throw new Error('Request timeout - WorldCat service unavailable');
+} else {
+throw new Error(`WorldCat lookup failed: ${error.message}`);
+}
+}
 }
 
 // Enhanced book preview display
 function displayBookPreview(bookData) {
-  const scanInfoHtml = bookData.scanInfo ? `
-      <div class="scanned-info">
-          📊 ${bookData.scanInfo.source === 'manual' ? 'Manual entry' :
-              bookData.scanInfo.source === 'test' ? 'Test scan' : 'Scanned'}:
-          ${bookData.scanInfo.originalBarcode ?
-              `${bookData.scanInfo.originalBarcode} → ` : ''}
-          ISBN: ${bookData.scanInfo.cleanedISBN}
-          ${bookData.scanInfo.foundIn ?
-              ` • Found in: ${bookData.scanInfo.foundIn}` : ''}
-      </div>
-  ` : '';
+const scanInfoHtml = bookData.scanInfo ? `
+<div class="scanned-info">
+📊 ${bookData.scanInfo.source === 'manual' ? 'Manual entry' :
+bookData.scanInfo.source === 'test' ? 'Test scan' : 'Scanned'}:
+${bookData.scanInfo.originalBarcode ?
+`${bookData.scanInfo.originalBarcode} → ` : ''}
+ISBN: ${bookData.scanInfo.cleanedISBN}
+${bookData.scanInfo.foundIn ?
+` • Found in: ${bookData.scanInfo.foundIn}` : ''}
+</div>
+` : '';
 
-  // Enhanced cover image with lazy loading and error handling
-  const coverImg = bookData.coverUrl ?
-      `<img src="${bookData.coverUrl}" alt="${bookData.title}" class="book-cover" loading="lazy" onerror="this.style.display='none'">` :
-      `<div class="book-cover" style="display:flex;align-items:center;justify-content:center;color:#666;">📖</div>`;
+// Enhanced cover image with lazy loading and error handling
+const coverImg = bookData.coverUrl ?
+`<img src="${bookData.coverUrl}" alt="${bookData.title}" class="book-cover" loading="lazy" onerror="this.style.display='none'">` :
+`<div class="book-cover" style="display:flex;align-items:center;justify-content:center;color:#666;">📖</div>`;
 
-  document.getElementById('scan-result').innerHTML = `
-      <div class="book-card">
-          ${scanInfoHtml}
-          <div class="book-info">
-              ${coverImg}
-              <div class="book-details">
-                  <h3>${bookData.title}</h3>
-                  <p><strong>Author:</strong> ${bookData.authors.join(', ')}</p>
-                  <p><strong>Pages:</strong> ${bookData.pageCount || 'Unknown'}</p>
-                  <p><strong>Published:</strong> ${bookData.publishedDate}</p>
-              </div>
-          </div>
-          <div class="book-actions">
-              <button class="btn btn-primary" id="add-book-btn">📚 Add to Library</button>
-              <button class="btn btn-warning" id="continue-scan-btn">🔄 Scan Another</button>
-              <button class="btn btn-danger" id="wrong-book-btn">❌ Wrong Book</button>
-          </div>
-      </div>
-  `;
+document.getElementById('scan-result').innerHTML = `
+<div class="book-card">
+${scanInfoHtml}
+<div class="book-info">
+${coverImg}
+<div class="book-details">
+<h3>${bookData.title}</h3>
+<p><strong>Author:</strong> ${bookData.authors.join(', ')}</p>
+<p><strong>Pages:</strong> ${bookData.pageCount || 'Unknown'}</p>
+<p><strong>Published:</strong> ${bookData.publishedDate}</p>
+</div>
+</div>
+<div class="book-actions">
+<button class="btn btn-primary" id="add-book-btn">📚 Add to Library</button>
+<button class="btn btn-warning" id="continue-scan-btn">🔄 Scan Another</button>
+<button class="btn btn-danger" id="wrong-book-btn">❌ Wrong Book</button>
+</div>
+</div>
+`;
 
-  // Add event listeners with error handling
-  const addBtn = document.getElementById('add-book-btn');
-  const continueBtn = document.getElementById('continue-scan-btn');
-  const wrongBtn = document.getElementById('wrong-book-btn');
+// Add event listeners with error handling
+const addBtn = document.getElementById('add-book-btn');
+const continueBtn = document.getElementById('continue-scan-btn');
+const wrongBtn = document.getElementById('wrong-book-btn');
 
-  if (addBtn) addBtn.addEventListener('click', () => addBookToLibrary(bookData));
-  if (continueBtn) continueBtn.addEventListener('click', continueScanningAfterPreview);
-  if (wrongBtn) wrongBtn.addEventListener('click', handleWrongBook);
+if (addBtn) addBtn.addEventListener('click', () => addBookToLibrary(bookData));
+if (continueBtn) continueBtn.addEventListener('click', continueScanningAfterPreview);
+if (wrongBtn) wrongBtn.addEventListener('click', handleWrongBook);
 }
 
 function handleWrongBook() {
-  document.getElementById('scan-result').style.display = 'none';
-  const manualInput = document.getElementById('manual-isbn');
-  if (manualInput) {
-      manualInput.value = '';
-  }
-  showError('Book lookup cancelled. Try scanning a different barcode or check the ISBN manually.');
+document.getElementById('scan-result').style.display = 'none';
+const manualInput = document.getElementById('manual-isbn');
+if (manualInput) {
+manualInput.value = '';
+}
+showError('Book lookup cancelled. Try scanning a different barcode or check the ISBN manually.');
 }
 
 // Enhanced add book with duplicate checking
 function addBookToLibrary(bookData) {
-  if (books.find(book => book.isbn === bookData.isbn)) {
-      showError('This book is already in your library!');
-      return;
-  }
+if (books.find(book => book.isbn === bookData.isbn)) {
+showError('This book is already in your library!');
+return;
+}
 
-  const newBook = {
-      ...bookData,
-      id: Date.now(),
-      currentPage: 0,
-      status: 'reading',
-      notes: '',
-      recommendation: null,
-      dateAdded: new Date().toISOString()
-  };
+const newBook = {
+...bookData,
+id: Date.now(),
+currentPage: 0,
+status: 'reading',
+notes: '',
+recommendation: null,
+dateAdded: new Date().toISOString()
+};
 
-  delete newBook.scanInfo;
+delete newBook.scanInfo;
 
-  books.push(newBook);
-  const saved = saveBooks();
+books.push(newBook);
 
-  if (saved) {
-      stopScanning();
-      const manualInput = document.getElementById('manual-isbn');
-      if (manualInput) {
-          manualInput.value = '';
-      }
-      switchTab('library');
-      showSuccess('Book added to your library!');
-  }
+const saved = saveBooks();
+if (saved) {
+stopScanning();
+const manualInput = document.getElementById('manual-isbn');
+if (manualInput) {
+manualInput.value = '';
+}
+switchTab('library');
+showSuccess('Book added to your library!');
+}
 }
 
 function continueScanningAfterPreview() {
-  document.getElementById('scan-result').style.display = 'none';
-  const manualInput = document.getElementById('manual-isbn');
-  if (manualInput) {
-      manualInput.value = '';
-  }
+document.getElementById('scan-result').style.display = 'none';
+const manualInput = document.getElementById('manual-isbn');
+if (manualInput) {
+manualInput.value = '';
+}
 
-  // Reset processing flag and restart scanning
-  isProcessingBarcode = false;
-  setTimeout(() => {
-      if (!scanningActive && quaggaInitialized) {
-          startQuagga();
-      }
-  }, 500);
+// Reset processing flag and restart scanning
+isProcessingBarcode = false;
+setTimeout(() => {
+if (!scanningActive && quaggaInitialized) {
+startQuagga();
+}
+}, 500);
 }
 
 // Enhanced event listener cleanup
 function cleanupEventListeners() {
-  eventListenerCleanup.forEach(cleanup => {
-      try {
-          cleanup();
-      } catch (error) {
-          debugLog('Error during event listener cleanup: ' + error.message);
-      }
-  });
-  eventListenerCleanup.length = 0;
+eventListenerCleanup.forEach(cleanup => {
+try {
+cleanup();
+} catch (error) {
+debugLog('Error during event listener cleanup: ' + error.message);
+}
+});
+eventListenerCleanup.length = 0;
 }
 
 // Enhanced library rendering with proper event management
 function renderLibrary() {
-  const libraryContent = document.getElementById('library-content');
+const libraryContent = document.getElementById('library-content');
 
-  // Clean up previous event listeners
-  cleanupEventListeners();
+// Clean up previous event listeners
+cleanupEventListeners();
 
-  if (books.length === 0) {
-      libraryContent.innerHTML = `
-          <div class="empty-state">
-              <h3>Your library is empty</h3>
-              <p>Start by scanning your first book!</p>
-          </div>
-      `;
-      return;
-  }
+if (books.length === 0) {
+libraryContent.innerHTML = `
+<div class="empty-state">
+<h3>Your library is empty</h3>
+<p>Start by scanning your first book!</p>
+</div>
+`;
+return;
+}
 
-  const booksHtml = books.map(book => {
-      const progress = book.pageCount > 0 ? (book.currentPage / book.pageCount) * 100 : 0;
+const booksHtml = books.map(book => {
+const progress = book.pageCount > 0 ? (book.currentPage / book.pageCount) * 100 : 0;
+const coverImg = book.coverUrl ?
+`<img src="${book.coverUrl}" alt="${book.title}" class="book-cover" loading="lazy" onerror="this.style.display='none'">` :
+`<div class="book-cover" style="display:flex;align-items:center;justify-content:center;color:#666;">📖</div>`;
 
-      const coverImg = book.coverUrl ?
-          `<img src="${book.coverUrl}" alt="${book.title}" class="book-cover" loading="lazy" onerror="this.style.display='none'">` :
-          `<div class="book-cover" style="display:flex;align-items:center;justify-content:center;color:#666;">📖</div>`;
+return `
+<div class="book-card" data-book-id="${book.id}">
+<div class="book-info">
+${coverImg}
+<div class="book-details">
+<h3>${book.title}</h3>
+<p><strong>Author:</strong> ${book.authors.join(', ')}</p>
+${book.pageCount > 0 ? `<p><strong>Progress:</strong> ${book.currentPage} / ${book.pageCount} pages</p>` : ''}
+</div>
+</div>
+${book.pageCount > 0 ? `<div class="progress-bar"><div class="progress-fill" style="width: ${progress}%"></div></div>` : ''}
+<div class="status-badges">
+<span class="badge badge-${book.status}">
+${book.status === 'reading' ? '📖 Reading' : book.status === 'finished' ? '✅ Finished' : '⏸ DNF'}
+</span>
+${book.recommendation ? `<span class="badge badge-${book.recommendation}">${book.recommendation === 'recommend' ? '👍 Recommend' : '👎 Not Recommend'}</span>` : ''}
+</div>
+<div class="page-input">
+<label>Current Page:</label>
+<input type="number" class="page-input-field" value="${book.currentPage}" min="0" max="${book.pageCount || 9999}">
+${book.pageCount > 0 ? `<span>/ ${book.pageCount}</span>` : ''}
+</div>
+<textarea class="notes-area" placeholder="Add your reading notes...">${book.notes}</textarea>
+<div class="book-actions">
+<button class="btn status-btn ${book.status === 'reading' ? 'btn-primary' : 'btn-warning'}" data-status="reading">📖 Reading</button>
+<button class="btn status-btn ${book.status === 'finished' ? 'btn-success' : 'btn-warning'}" data-status="finished">✅ Finished</button>
+<button class="btn status-btn ${book.status === 'dnf' ? 'btn-warning' : 'btn-danger'}" data-status="dnf">⏸ DNF</button>
+<button class="btn rec-btn ${book.recommendation === 'recommend' ? 'btn-success' : 'btn-warning'}" data-recommendation="recommend">👍 Recommend</button>
+<button class="btn rec-btn ${book.recommendation === 'not-recommend' ? 'btn-danger' : 'btn-warning'}" data-recommendation="not-recommend">👎 Not Recommend</button>
+<button class="btn btn-danger remove-btn">🗑 Remove</button>
+</div>
+</div>
+`;
+}).join('');
 
-      return `
-          <div class="book-card" data-book-id="${book.id}">
-              <div class="book-info">
-                  ${coverImg}
-                  <div class="book-details">
-                      <h3>${book.title}</h3>
-                      <p><strong>Author:</strong> ${book.authors.join(', ')}</p>
-                      ${book.pageCount > 0 ? `<p><strong>Progress:</strong> ${book.currentPage} / ${book.pageCount} pages</p>` : ''}
-                  </div>
-              </div>
-              ${book.pageCount > 0 ? `<div class="progress-bar"><div class="progress-fill" style="width: ${progress}%"></div></div>` : ''}
-              <div class="status-badges">
-                  <span class="badge badge-${book.status}">
-                      ${book.status === 'reading' ? '📖 Reading' : book.status === 'finished' ? '✅ Finished' : '⏸ DNF'}
-                  </span>
-                  ${book.recommendation ? `<span class="badge badge-${book.recommendation}">${book.recommendation === 'recommend' ? '👍 Recommend' : '👎 Not Recommend'}</span>` : ''}
-              </div>
-              <div class="page-input">
-                  <label>Current Page:</label>
-                  <input type="number" class="page-input-field" value="${book.currentPage}" min="0" max="${book.pageCount || 9999}">
-                  ${book.pageCount > 0 ? `<span>/ ${book.pageCount}</span>` : ''}
-              </div>
-              <textarea class="notes-area" placeholder="Add your reading notes...">${book.notes}</textarea>
-              <div class="book-actions">
-                  <button class="btn status-btn ${book.status === 'reading' ? 'btn-primary' : 'btn-warning'}" data-status="reading">📖 Reading</button>
-                  <button class="btn status-btn ${book.status === 'finished' ? 'btn-success' : 'btn-warning'}" data-status="finished">✅ Finished</button>
-                  <button class="btn status-btn ${book.status === 'dnf' ? 'btn-warning' : 'btn-danger'}" data-status="dnf">⏸ DNF</button>
-                  <button class="btn rec-btn ${book.recommendation === 'recommend' ? 'btn-success' : 'btn-warning'}" data-recommendation="recommend">👍 Recommend</button>
-                  <button class="btn rec-btn ${book.recommendation === 'not-recommend' ? 'btn-danger' : 'btn-warning'}" data-recommendation="not-recommend">👎 Not Recommend</button>
-                  <button class="btn btn-danger remove-btn">🗑 Remove</button>
-              </div>
-          </div>
-      `;
-  }).join('');
+libraryContent.innerHTML = booksHtml;
 
-  libraryContent.innerHTML = booksHtml;
+// Add event listeners with proper cleanup tracking
+document.querySelectorAll('.book-card').forEach(card => {
+const bookId = parseInt(card.getAttribute('data-book-id'));
 
-  // Add event listeners with proper cleanup tracking
-  document.querySelectorAll('.book-card').forEach(card => {
-      const bookId = parseInt(card.getAttribute('data-book-id'));
+// Create debounced handlers
+const debouncedPageUpdate = debounce((value) => updateBookPage(bookId, value), 500);
+const debouncedNotesUpdate = debounce((value) => updateBookNotes(bookId, value), 1000);
 
-      // Create debounced handlers
-      const debouncedPageUpdate = debounce((value) => updateBookPage(bookId, value), 500);
-      const debouncedNotesUpdate = debounce((value) => updateBookNotes(bookId, value), 1000);
+// Page input handler
+const pageHandler = (e) => debouncedPageUpdate(e.target.value);
+const pageInput = card.querySelector('.page-input-field');
+if (pageInput) {
+pageInput.addEventListener('input', pageHandler);
+eventListenerCleanup.push(() => pageInput.removeEventListener('input', pageHandler));
+}
 
-      // Page input handler
-      const pageHandler = (e) => debouncedPageUpdate(e.target.value);
-      const pageInput = card.querySelector('.page-input-field');
-      if (pageInput) {
-          pageInput.addEventListener('input', pageHandler);
-          eventListenerCleanup.push(() => pageInput.removeEventListener('input', pageHandler));
-      }
+// Notes handler
+const notesHandler = (e) => debouncedNotesUpdate(e.target.value);
+const notesArea = card.querySelector('.notes-area');
+if (notesArea) {
+notesArea.addEventListener('input', notesHandler);
+eventListenerCleanup.push(() => notesArea.removeEventListener('input', notesHandler));
+}
 
-      // Notes handler
-      const notesHandler = (e) => debouncedNotesUpdate(e.target.value);
-      const notesArea = card.querySelector('.notes-area');
-      if (notesArea) {
-          notesArea.addEventListener('input', notesHandler);
-          eventListenerCleanup.push(() => notesArea.removeEventListener('input', notesHandler));
-      }
+// Status buttons
+card.querySelectorAll('.status-btn').forEach(btn => {
+const statusHandler = (e) => updateBookStatus(bookId, e.target.getAttribute('data-status'));
+btn.addEventListener('click', statusHandler);
+eventListenerCleanup.push(() => btn.removeEventListener('click', statusHandler));
+});
 
-      // Status buttons
-      card.querySelectorAll('.status-btn').forEach(btn => {
-          const statusHandler = (e) => updateBookStatus(bookId, e.target.getAttribute('data-status'));
-          btn.addEventListener('click', statusHandler);
-          eventListenerCleanup.push(() => btn.removeEventListener('click', statusHandler));
-      });
+// Recommendation buttons
+card.querySelectorAll('.rec-btn').forEach(btn => {
+const recHandler = (e) => updateBookRecommendation(bookId, e.target.getAttribute('data-recommendation'));
+btn.addEventListener('click', recHandler);
+eventListenerCleanup.push(() => btn.removeEventListener('click', recHandler));
+});
 
-      // Recommendation buttons
-      card.querySelectorAll('.rec-btn').forEach(btn => {
-          const recHandler = (e) => updateBookRecommendation(bookId, e.target.getAttribute('data-recommendation'));
-          btn.addEventListener('click', recHandler);
-          eventListenerCleanup.push(() => btn.removeEventListener('click', recHandler));
-      });
-
-      // Remove button
-      const removeBtn = card.querySelector('.remove-btn');
-      if (removeBtn) {
-          const removeHandler = () => removeBook(bookId);
-          removeBtn.addEventListener('click', removeHandler);
-          eventListenerCleanup.push(() => removeBtn.removeEventListener('click', removeHandler));
-      }
-  });
+// Remove button
+const removeBtn = card.querySelector('.remove-btn');
+if (removeBtn) {
+const removeHandler = () => removeBook(bookId);
+removeBtn.addEventListener('click', removeHandler);
+eventListenerCleanup.push(() => removeBtn.removeEventListener('click', removeHandler));
+}
+});
 }
 
 // Enhanced book update functions with validation
 function updateBookPage(bookId, newPage) {
-  const book = books.find(b => b.id === bookId);
-  if (book) {
-      const pageNum = Math.max(0, parseInt(newPage) || 0);
+const book = books.find(b => b.id === bookId);
+if (book) {
+const pageNum = Math.max(0, parseInt(newPage) || 0);
+// Validate page number
+if (book.pageCount > 0 && pageNum > book.pageCount) {
+book.currentPage = book.pageCount;
+} else {
+book.currentPage = pageNum;
+}
 
-      // Validate page number
-      if (book.pageCount > 0 && pageNum > book.pageCount) {
-          book.currentPage = book.pageCount;
-      } else {
-          book.currentPage = pageNum;
-      }
+// Auto-update status when finished
+if (book.pageCount > 0 && book.currentPage >= book.pageCount) {
+book.status = 'finished';
+}
 
-      // Auto-update status when finished
-      if (book.pageCount > 0 && book.currentPage >= book.pageCount) {
-          book.status = 'finished';
-      }
-
-      if (saveBooks()) {
-          renderLibrary();
-      }
-  }
+if (saveBooks()) {
+renderLibrary();
+}
+}
 }
 
 function updateBookNotes(bookId, notes) {
-  const book = books.find(b => b.id === bookId);
-  if (book) {
-      book.notes = sanitizeInput(notes);
-      saveBooks();
-  }
+const book = books.find(b => b.id === bookId);
+if (book) {
+book.notes = sanitizeInput(notes);
+saveBooks();
+}
 }
 
 function updateBookStatus(bookId, status) {
-  const book = books.find(b => b.id === bookId);
-  if (book) {
-      book.status = status;
-      if (status === 'finished' && book.pageCount > 0) {
-          book.currentPage = book.pageCount;
-      }
-      if (saveBooks()) {
-          renderLibrary();
-      }
-  }
+const book = books.find(b => b.id === bookId);
+if (book) {
+book.status = status;
+if (status === 'finished' && book.pageCount > 0) {
+book.currentPage = book.pageCount;
+}
+if (saveBooks()) {
+renderLibrary();
+}
+}
 }
 
 function updateBookRecommendation(bookId, recommendation) {
-  const book = books.find(b => b.id === bookId);
-  if (book) {
-      book.recommendation = book.recommendation === recommendation ? null : recommendation;
-      if (saveBooks()) {
-          renderLibrary();
-      }
-  }
+const book = books.find(b => b.id === bookId);
+if (book) {
+book.recommendation = book.recommendation === recommendation ? null : recommendation;
+if (saveBooks()) {
+renderLibrary();
+}
+}
 }
 
 // Enhanced remove book with confirmation
 function removeBook(bookId) {
-  const book = books.find(b => b.id === bookId);
-  const bookTitle = book ? book.title : 'this book';
+const book = books.find(b => b.id === bookId);
+const bookTitle = book ? book.title : 'this book';
 
-  if (confirm(`Are you sure you want to remove "${bookTitle}" from your library?`)) {
-      books = books.filter(b => b.id !== bookId);
-      if (saveBooks()) {
-          renderLibrary();
-          showSuccess('Book removed from library');
-      }
-  }
+if (confirm(`Are you sure you want to remove "${bookTitle}" from your library?`)) {
+books = books.filter(b => b.id !== bookId);
+if (saveBooks()) {
+renderLibrary();
+showSuccess('Book removed from library');
+}
+}
 }
 
 // Enhanced error display
 function showError(message) {
-  console.error('ERROR:', message);
+console.error('ERROR:', message);
 
-  // Remove existing errors
-  document.querySelectorAll('.error').forEach(el => el.remove());
+// Remove existing errors
+document.querySelectorAll('.error').forEach(el => el.remove());
 
-  const errorDiv = document.createElement('div');
-  errorDiv.className = 'error';
-  errorDiv.innerHTML = `
-      <div>${sanitizeInput(message)}</div>
-      <button onclick="this.parentElement.remove()" style="background: transparent; border: 1px solid #cc5500; color: #cc5500; padding: 5px 10px; margin-top: 10px; border-radius: 4px; cursor: pointer;">
-          Dismiss
-      </button>
-  `;
+const errorDiv = document.createElement('div');
+errorDiv.className = 'error';
+errorDiv.innerHTML = `
+<div>${sanitizeInput(message)}</div>
+<button onclick="this.parentElement.remove()" style="background: transparent; border: 1px solid #cc5500; color: #cc5500; padding: 5px 10px; margin-top: 10px; border-radius: 4px; cursor: pointer;">
+Dismiss
+</button>
+`;
 
-  const scanArea = document.querySelector('#scan-tab > div');
-  if (scanArea) {
-      scanArea.insertBefore(errorDiv, scanArea.firstChild);
-  }
+const scanArea = document.querySelector('#scan-tab > div');
+if (scanArea) {
+scanArea.insertBefore(errorDiv, scanArea.firstChild);
+}
 
-  // Auto-dismiss after 10 seconds
-  setTimeout(() => {
-      if (errorDiv.parentNode) {
-          errorDiv.parentNode.removeChild(errorDiv);
-      }
-  }, 10000);
+// Auto-dismiss after 10 seconds
+setTimeout(() => {
+if (errorDiv.parentNode) {
+errorDiv.parentNode.removeChild(errorDiv);
+}
+}, 10000);
 }
 
 function showSuccess(message) {
-  const successDiv = document.createElement('div');
-  successDiv.style.cssText = 'background: #333; color: #cc5500; padding: 15px; border-radius: 8px; margin: 20px; text-align: center; font-weight: bold; border: 1px solid #cc5500;';
-  successDiv.textContent = sanitizeInput(message);
+const successDiv = document.createElement('div');
+successDiv.style.cssText = 'background: #333; color: #cc5500; padding: 15px; border-radius: 8px; margin: 20px; text-align: center; font-weight: bold; border: 1px solid #cc5500;';
+successDiv.textContent = sanitizeInput(message);
 
-  const header = document.querySelector('.header');
-  if (header) {
-      header.after(successDiv);
-  }
+const header = document.querySelector('.header');
+if (header) {
+header.after(successDiv);
+}
 
-  setTimeout(() => {
-      if (successDiv.parentNode) {
-          successDiv.parentNode.removeChild(successDiv);
-      }
-  }, 3000);
+setTimeout(() => {
+if (successDiv.parentNode) {
+successDiv.parentNode.removeChild(successDiv);
+}
+}, 3000);
 }
 
 // Enhanced page visibility handling
 document.addEventListener('visibilitychange', function() {
-  if (document.hidden && scanningActive) {
-      debugLog('Page hidden, stopping scanning');
-      stopScanning();
-  }
+if (document.hidden && scanningActive) {
+debugLog('Page hidden, stopping scanning');
+stopScanning();
+}
 });
 
 // Enhanced beforeunload cleanup
 window.addEventListener('beforeunload', function() {
-  cleanupEventListeners();
-  if (scanningActive) {
-      stopScanning();
-  }
+cleanupEventListeners();
+if (scanningActive) {
+stopScanning();
+}
 });
 
 // Enhanced page load cleanup
 window.addEventListener('load', function() {
-  debugLog('🚀 App fully loaded and cleaned');
-  // Clean up any residual states
-  isProcessingBarcode = false;
-  lastScannedBarcode = null;
-  lastScanTime = 0;
+debugLog('🚀 App fully loaded and cleaned');
+// Clean up any residual states
+isProcessingBarcode = false;
+lastScannedBarcode = null;
+lastScanTime = 0;
 });
 
 // Enhanced error boundary for uncaught errors
 window.addEventListener('error', function(event) {
-  const error = event.error;
-  const message = error?.message || 'Unknown error';
-  const filename = event.filename || 'Unknown file';
-  const lineno = event.lineno || 'Unknown line';
+const error = event.error;
+const message = error?.message || 'Unknown error';
+const filename = event.filename || 'Unknown file';
+const lineno = event.lineno || 'Unknown line';
 
-  debugLog(`Uncaught error: ${message} at ${filename}:${lineno}`);
-  console.error('Full error details:', {
-      message: message,
-      filename: filename,
-      lineno: lineno,
-      colno: event.colno,
-      error: error,
-      stack: error?.stack
-  });
+debugLog(`Uncaught error: ${message} at ${filename}:${lineno}`);
+console.error('Full error details:', {
+message: message,
+filename: filename,
+lineno: lineno,
+colno: event.colno,
+error: error,
+stack: error?.stack
+});
 
-  // Only stop scanning if it's actually running
-  if (scanningActive) {
-      debugLog('Stopping scanning due to error');
-      stopScanning();
-  }
+// Only stop scanning if it's actually running
+if (scanningActive) {
+debugLog('Stopping scanning due to error');
+stopScanning();
+}
 
-  // Only show error for critical issues, not minor ones
-  if (message.includes('Quagga') || message.includes('camera') || message.includes('video')) {
-      showError('Scanner error occurred. Please try again or refresh the page.');
-  }
+// Only show error for critical issues, not minor ones
+if (message.includes('Quagga') || message.includes('camera') || message.includes('video')) {
+showError('Scanner error occurred. Please try again or refresh the page.');
+}
 });
 
 // Enhanced unhandled promise rejection handler
 window.addEventListener('unhandledrejection', function(event) {
-  const reason = event.reason;
-  debugLog('Unhandled promise rejection: ' + reason);
-  console.error('Promise rejection details:', reason);
+const reason = event.reason;
+debugLog('Unhandled promise rejection: ' + reason);
+console.error('Promise rejection details:', reason);
 
-  // Don't show errors for network timeouts or common API failures
-  if (typeof reason === 'string' && (
-      reason.includes('timeout') || 
-      reason.includes('fetch') || 
-      reason.includes('network')
-  )) {
-      debugLog('Network-related promise rejection, not showing error to user');
-      event.preventDefault();
-      return;
-  }
+// Don't show errors for network timeouts or common API failures
+if (typeof reason === 'string' && (
+reason.includes('timeout') ||
+reason.includes('fetch') ||
+reason.includes('network')
+)) {
+debugLog('Network-related promise rejection, not showing error to user');
+event.preventDefault();
+return;
+}
 
-  showError('A processing error occurred. Please try again.');
-  event.preventDefault();
+showError('A processing error occurred. Please try again.');
+event.preventDefault();
 });
-
 </script>
 </body>
 </html>
