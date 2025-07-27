@@ -396,7 +396,7 @@ return success;
 // Input validation
 function validateISBN(isbn) {
 const cleaned = isbn.replace(/\D/g, '');
-return cleaned.length >= 8 && cleaned.length <= 14;
+return cleaned.length >= 8 && cleaned.length <= 13;
 }
 
 // Enhanced false positive detection with relaxed filtering
@@ -421,7 +421,7 @@ if (isbn.includes(pattern)) return true;
 if (isbn.length < 8) return true; // Changed from 8 to 7
 // Removed the overly strict prefix checks
 
-// Allow 8-digit codes for testing - comment out the rejection
+// Allow 9-digit codes for testing - comment out the rejection
 // if (isbn.length === 9) {
 //     console.log('⚠️ 9-digit code detected, likely not a book ISBN:', isbn);
 //     return true;
